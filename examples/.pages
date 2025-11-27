@@ -1,0 +1,17 @@
+# Example .pages configuration file
+#
+# Place this file in the root of your Forgejo/Gitea repository
+# to enable static site hosting with the pages-server plugin.
+
+# Enable pages for this repository (required)
+enabled: true
+
+# Optional: Specify a custom domain for this site
+# The plugin will automatically create DNS records and SSL certificates
+# custom_domain: www.example.com
+
+# Note: You can also use subdomain
+# custom_domain: blog.example.com
+
+# Multiple custom domains are not currently supported
+# Use one .pages file per repository

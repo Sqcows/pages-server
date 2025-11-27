@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - Forgejo Pages Example</title>
+    <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>About This Site</h1>
+            <p class="tagline">Learn more about Forgejo Pages</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <section>
+            <h2>What is Forgejo Pages?</h2>
+            <p>
+                Forgejo Pages Server is a Traefik middleware plugin that brings static site hosting
+                capabilities to Forgejo and Gitea, similar to GitHub Pages and GitLab Pages.
+            </p>
+        </section>
+
+        <section>
+            <h2>Key Features</h2>
+            <ul>
+                <li><strong>Static Site Hosting</strong>: Serve HTML, CSS, JavaScript, and assets directly from your repositories</li>
+                <li><strong>Automatic HTTPS</strong>: Integration with Traefik's Let's Encrypt for automatic SSL certificates</li>
+                <li><strong>Custom Domains</strong>: Use your own domain names with automatic DNS configuration</li>
+                <li><strong>Profile Sites</strong>: Create personal pages at username.pages.example.com</li>
+                <li><strong>High Performance</strong>: Built-in caching for sub-5ms response times</li>
+                <li><strong>Easy Configuration</strong>: Simple .pages file in YAML format</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>How It Works</h2>
+            <ol>
+                <li>You create a repository in Forgejo/Gitea with a <code>public/</code> folder</li>
+                <li>Add a <code>.pages</code> file to enable hosting</li>
+                <li>The plugin serves files from the <code>public/</code> folder</li>
+                <li>Traefik handles HTTPS and routing automatically</li>
+                <li>Your site is live at the configured URL</li>
+            </ol>
+        </section>
+
+        <section>
+            <h2>Technology Stack</h2>
+            <ul>
+                <li><strong>Traefik</strong>: Modern reverse proxy and load balancer</li>
+                <li><strong>Forgejo/Gitea</strong>: Git hosting platform</li>
+                <li><strong>Let's Encrypt</strong>: Free SSL certificate authority</li>
+                <li><strong>Cloudflare</strong>: DNS management (optional)</li>
+                <li><strong>Go</strong>: Plugin implementation language</li>
+            </ul>
+        </section>
+
+        <section class="cta">
+            <h2>Ready to Get Started?</h2>
+            <p>Check out the <a href="https://code.squarecows.com/SquareCows/pages-server">documentation</a> to set up your own Forgejo Pages server.</p>
+            <p><a href="./index.html" class="button">← Back to Home</a></p>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>Powered by <strong>Forgejo Pages Server</strong> | <a href="https://code.squarecows.com/SquareCows/pages-server">GitHub</a></p>
+            <p>&copy; 2025 Your Name</p>
+        </div>
+    </footer>
+
+    <script src="./js/script.js"></script>
+</body>
+</html>

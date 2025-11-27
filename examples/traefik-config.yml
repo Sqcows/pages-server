@@ -1,0 +1,191 @@
+# Example Traefik Configuration for Forgejo Pages Server Plugin
+#
+# This file demonstrates how to configure Traefik to use the pages-server plugin.
+# Split into static configuration (traefik.yml) and dynamic configuration (dynamic.yml)
+
+---
+# ============================================================================
+# STATIC CONFIGURATION (traefik.yml)
+# ============================================================================
+# Place this in your Traefik static configuration file
+
+# Enable the plugin
+experimental:
+  plugins:
+    pages-server:
+      moduleName: github.com/SquareCows/pages-server
+      version: v0.0.1
+
+# Define entry points
+entryPoints:
+  web:
+    address: ":80"
+    # Redirect HTTP to HTTPS
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+
+  websecure:
+    address: ":443"
+
+# Configure Let's Encrypt certificate resolver
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: admin@example.com
+      storage: /letsencrypt/acme.json
+      # Use HTTP challenge
+      httpChallenge:
+        entryPoint: web
+      # OR use DNS challenge for wildcard certificates (recommended)
+      # dnsChallenge:
+      #   provider: cloudflare
+      #   resolvers:
+      #     - "1.1.1.1:53"
+      #     - "8.8.8.8:53"
+
+# Enable API and dashboard (optional)
+api:
+  dashboard: true
+  insecure: false
+
+# Configure providers
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+# Logging
+log:
+  level: INFO
+
+accessLog:
+  filePath: /var/log/traefik/access.log
+
+---
+# ============================================================================
+# DYNAMIC CONFIGURATION (dynamic.yml)
+# ============================================================================
+# Place this in your Traefik dynamic configuration file
+
+http:
+  # Define the pages-server middleware
+  middlewares:
+    pages-server:
+      plugin:
+        pages-server:
+          # Required settings
+          pagesDomain: pages.example.com
+          forgejoHost: https://git.example.com
+          letsEncryptEndpoint: https://acme-v02.api.letsencrypt.org/directory
+          letsEncryptEmail: admin@example.com
+
+          # Optional: Forgejo API token (required for private repositories)
+          forgejoToken: your-forgejo-api-token-here
+
+          # Optional: Cloudflare DNS settings (for custom domains)
+          cloudflareAPIKey: your-cloudflare-api-key-here
+          cloudflareZoneID: your-cloudflare-zone-id-here
+
+          # Optional: Custom error pages repository
+          errorPagesRepo: system/error-pages
+
+          # Optional: Redis caching (leave empty to use in-memory cache)
+          # redisHost: localhost
+          # redisPort: 6379
+          # redisPassword: ""
+          # cacheTTL: 300
+
+  # Define the router for pages
+  routers:
+    pages-http:
+      rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.pages.example.com`)"
+      entryPoints:
+        - web
+      service: noop@internal
+      middlewares:
+        - pages-server
+
+    pages-https:
+      rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.pages.example.com`)"
+      entryPoints:
+        - websecure
+      service: noop@internal
+      middlewares:
+        - pages-server
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: "pages.example.com"
+            sans:
+              - "*.pages.example.com"
+
+---
+# ============================================================================
+# DOCKER COMPOSE EXAMPLE
+# ============================================================================
+# Example docker-compose.yml for running Traefik with the plugin
+
+# version: '3.8'
+#
+# services:
+#   traefik:
+#     image: traefik:v2.10
+#     container_name: traefik
+#     restart: unless-stopped
+#     security_opt:
+#       - no-new-privileges:true
+#     ports:
+#       - "80:80"
+#       - "443:443"
+#     environment:
+#       - CLOUDFLARE_EMAIL=your-email@example.com
+#       - CLOUDFLARE_API_KEY=your-cloudflare-api-key
+#     volumes:
+#       - /var/run/docker.sock:/var/run/docker.sock:ro
+#       - ./traefik.yml:/etc/traefik/traefik.yml:ro
+#       - ./dynamic.yml:/etc/traefik/dynamic.yml:ro
+#       - ./letsencrypt:/letsencrypt
+#       - ./logs:/var/log/traefik
+#     networks:
+#       - traefik
+#
+# networks:
+#   traefik:
+#     external: true
+
+---
+# ============================================================================
+# CLOUDFLARE DNS SETUP
+# ============================================================================
+# To use custom domains with Cloudflare:
+#
+# 1. Create an API token in Cloudflare with Zone:DNS:Edit permissions
+# 2. Get your Zone ID from the Cloudflare dashboard
+# 3. Add the credentials to the plugin configuration above
+# 4. The plugin will automatically create DNS records for custom domains
+#
+# Alternatively, manually create DNS records:
+# - Type: A
+# - Name: *.pages.example.com
+# - Value: [Your Traefik server IP]
+# - Proxy status: DNS only (for Let's Encrypt HTTP challenge)
+#              or Proxied (if using Cloudflare SSL)
+
+---
+# ============================================================================
+# ENVIRONMENT VARIABLES FOR SECRETS
+# ============================================================================
+# For production, use environment variables for sensitive data:
+#
+# In your docker-compose.yml or system environment:
+#   FORGEJO_API_TOKEN=your-token
+#   CLOUDFLARE_API_KEY=your-key
+#   CLOUDFLARE_ZONE_ID=your-zone-id
+#
+# Then reference them in dynamic.yml:
+#   forgejoToken: ${FORGEJO_API_TOKEN}
+#   cloudflareAPIKey: ${CLOUDFLARE_API_KEY}
+#   cloudflareZoneID: ${CLOUDFLARE_ZONE_ID}
