@@ -21,12 +21,6 @@ type Config struct {
 	// ForgejoToken is the API token for accessing Forgejo (optional for public repos)
 	ForgejoToken string `json:"forgejoToken,omitempty"`
 
-	// LetsEncryptEndpoint is the ACME endpoint for Let's Encrypt
-	LetsEncryptEndpoint string `json:"letsEncryptEndpoint,omitempty"`
-
-	// LetsEncryptEmail is the email address for Let's Encrypt registration
-	LetsEncryptEmail string `json:"letsEncryptEmail,omitempty"`
-
 	// CloudflareAPIKey is the API key for Cloudflare DNS management
 	CloudflareAPIKey string `json:"cloudflareAPIKey,omitempty"`
 
@@ -63,7 +57,6 @@ type PagesServer struct {
 	name          string
 	config        *Config
 	forgejoClient *ForgejoClient
-	certManager   *CertificateManager
 	dnsManager    *CloudflareDNSManager
 	cache         Cache
 	mu            sync.RWMutex
@@ -79,23 +72,11 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	if config.ForgejoHost == "" {
 		return nil, fmt.Errorf("forgejoHost is required")
 	}
-	if config.LetsEncryptEndpoint == "" {
-		return nil, fmt.Errorf("letsEncryptEndpoint is required")
-	}
-	if config.LetsEncryptEmail == "" {
-		return nil, fmt.Errorf("letsEncryptEmail is required")
-	}
 
 	// Initialize Forgejo client
 	forgejoClient := NewForgejoClient(config.ForgejoHost, config.ForgejoToken)
 
-	// Initialize certificate manager for Let's Encrypt
-	certManager, err := NewCertificateManager(config.LetsEncryptEndpoint, config.LetsEncryptEmail)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create certificate manager: %w", err)
-	}
-
-	// Initialize Cloudflare DNS manager
+	// Initialize Cloudflare DNS manager (optional)
 	var dnsManager *CloudflareDNSManager
 	if config.CloudflareAPIKey != "" && config.CloudflareZoneID != "" {
 		dnsManager = NewCloudfllareDNSManager(config.CloudflareAPIKey, config.CloudflareZoneID)
@@ -114,7 +95,6 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		name:          name,
 		config:        config,
 		forgejoClient: forgejoClient,
-		certManager:   certManager,
 		dnsManager:    dnsManager,
 		cache:         cache,
 		errorPages:    make(map[int][]byte),

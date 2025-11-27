@@ -54,7 +54,7 @@ Add the plugin to your Traefik static configuration (`traefik.yml` or command li
 experimental:
   plugins:
     pages-server:
-      moduleName: github.com/SquareCows/pages-server
+      moduleName: code.squarecows.com/SquareCows/pages-server
       version: v0.0.1
 ```
 
@@ -88,13 +88,13 @@ http:
     pages-server:
       plugin:
         pages-server:
+          # Required parameters
           pagesDomain: pages.example.com
           forgejoHost: https://git.example.com
+          # Optional parameters
           forgejoToken: your-forgejo-api-token  # Optional for public repos
-          letsEncryptEndpoint: https://acme-v02.api.letsencrypt.org/directory
-          letsEncryptEmail: admin@example.com
-          cloudflareAPIKey: your-cloudflare-api-key
-          cloudflareZoneID: your-zone-id
+          cloudflareAPIKey: your-cloudflare-api-key  # Optional for custom domains
+          cloudflareZoneID: your-zone-id  # Optional for custom domains
           errorPagesRepo: system/error-pages  # Optional
           redisHost: localhost  # Optional
           redisPort: 6379       # Optional
@@ -132,16 +132,14 @@ http:
 |-----------|------|-------------|
 | `pagesDomain` | string | Base domain for serving pages (e.g., `pages.example.com`) |
 | `forgejoHost` | string | Forgejo/Gitea instance URL (e.g., `https://git.example.com`) |
-| `letsEncryptEndpoint` | string | ACME endpoint URL |
-| `letsEncryptEmail` | string | Email for Let's Encrypt registration |
 
 ### Optional Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `forgejoToken` | string | "" | API token for Forgejo (required for private repos) |
-| `cloudflareAPIKey` | string | "" | Cloudflare API key for DNS management |
-| `cloudflareZoneID` | string | "" | Cloudflare zone ID |
+| `cloudflareAPIKey` | string | "" | Cloudflare API key for DNS management (required for custom domains) |
+| `cloudflareZoneID` | string | "" | Cloudflare zone ID (required for custom domains) |
 | `errorPagesRepo` | string | "" | Repository for custom error pages (format: `username/repository`) |
 | `redisHost` | string | "" | Redis server host for caching |
 | `redisPort` | int | 6379 | Redis server port |
@@ -158,12 +156,12 @@ To use a custom domain for your site:
    custom_domain: www.example.com
    ```
 
-2. Ensure you have configured the `cloudflareAPIKey` and `cloudflareZoneID` in the plugin configuration
-
-3. The plugin will automatically:
+2. The plugin will automatically (if Cloudflare is configured):
    - Create DNS A records pointing to your Traefik instance
+
+3. Traefik's certificatesResolvers will automatically:
    - Request SSL certificates via Let's Encrypt
-   - Serve your site on the custom domain
+   - Serve your site on the custom domain with HTTPS
 
 ## Custom Error Pages
 
@@ -227,8 +225,6 @@ go tool cover -html=coverage.out
 ├── forgejo_client_test.go
 ├── cache.go              # Caching implementation
 ├── cache_test.go
-├── cert_manager.go       # Certificate management
-├── cert_manager_test.go
 ├── cloudflare_dns.go     # Cloudflare DNS integration
 ├── cloudflare_dns_test.go
 ├── README.md
@@ -246,7 +242,7 @@ go tool cover -html=coverage.out
 ## Limitations
 
 - The plugin runs in Traefik's Yaegi interpreter, which has some limitations compared to compiled Go
-- Certificate management is handled by Traefik's ACME resolver, not directly by the plugin
+- SSL certificate management is handled by Traefik's certificatesResolvers configuration, not by the plugin
 - Redis caching currently falls back to in-memory cache due to Yaegi compatibility
 
 ## Examples

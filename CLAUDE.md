@@ -13,8 +13,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Key Features
 
 - Serves static files from `public/` folders in Forgejo/Gitea repositories
-- Automatic HTTPS via Let's Encrypt with HTTP→HTTPS redirect
-- Custom domain support with automatic SSL certificates
+- Automatic HTTPS via Traefik's certificatesResolvers with HTTP→HTTPS redirect
+- Custom domain support (SSL certificates managed by Traefik)
 - Cloudflare DNS integration for custom domains
 - URL format: `$git_username.$configured_domain/$repository`
 - Profile sites at `$git_username.$configured_domain/` (from `.profile` directory)
@@ -26,9 +26,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Must run in Traefik's Yaegi interpreter** (embedded Go interpreter)
 - **Prefer standard library** over third-party packages
-- **Allowed dependency**: `github.com/go-acme/lego` for Let's Encrypt
-- Only access public repositories on Forgejo
+- **No external dependencies** - uses only Go standard library
+- Only access public repositories on Forgejo (or private with API token)
 - Target performance: <5ms response time
+- **SSL certificates managed by Traefik** - plugin does not handle certificates
 
 ## Configuration
 
@@ -37,14 +38,19 @@ The plugin is configured via Traefik's YAML configuration with the following par
 **Required:**
 - Pages domain name
 - Forgejo host URL
-- Forgejo API key (if needed)
-- Let's Encrypt endpoint
-- Let's Encrypt email
-- Cloudflare API key
-- Cloudflare zone ID
+
+**Optional:**
+- Forgejo API token (for private repositories)
+- Cloudflare API key (for custom domain DNS management)
+- Cloudflare zone ID (for custom domain DNS management)
+- Error pages repository
+- Redis caching configuration
 
 **Custom Domain Configuration:**
 Custom domains are specified in the `.pages` file within each repository.
+
+**SSL Certificate Configuration:**
+SSL certificates are managed by Traefik's `certificatesResolvers` configuration, not by the plugin.
 
 ## URL Structure
 
@@ -64,8 +70,8 @@ For a repository to be served, it must have:
 - See: https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/
 - Plugin creation guide: https://plugins.traefik.io/create
 - Uses Forgejo API to access repository contents
-- Dynamically creates Let's Encrypt certificates for custom domains
-- Updates Cloudflare DNS records for custom domains
+- SSL certificates managed by Traefik's certificatesResolvers (not by plugin)
+- Updates Cloudflare DNS records for custom domains (optional)
 
 ## Development
 

@@ -27,10 +27,8 @@ func TestCreateConfig(t *testing.T) {
 // TestNew tests the New function with valid configuration.
 func TestNew(t *testing.T) {
 	config := &Config{
-		PagesDomain:         "pages.example.com",
-		ForgejoHost:         "https://git.example.com",
-		LetsEncryptEndpoint: "https://acme-staging-v02.api.letsencrypt.org/directory",
-		LetsEncryptEmail:    "admin@example.com",
+		PagesDomain: "pages.example.com",
+		ForgejoHost: "https://git.example.com",
 	}
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,38 +64,16 @@ func TestNewWithMissingConfig(t *testing.T) {
 		{
 			name: "missing PagesDomain",
 			config: &Config{
-				ForgejoHost:         "https://git.example.com",
-				LetsEncryptEndpoint: "https://acme-staging-v02.api.letsencrypt.org/directory",
-				LetsEncryptEmail:    "admin@example.com",
+				ForgejoHost: "https://git.example.com",
 			},
 			errMsg: "pagesDomain is required",
 		},
 		{
 			name: "missing ForgejoHost",
 			config: &Config{
-				PagesDomain:         "pages.example.com",
-				LetsEncryptEndpoint: "https://acme-staging-v02.api.letsencrypt.org/directory",
-				LetsEncryptEmail:    "admin@example.com",
+				PagesDomain: "pages.example.com",
 			},
 			errMsg: "forgejoHost is required",
-		},
-		{
-			name: "missing LetsEncryptEndpoint",
-			config: &Config{
-				PagesDomain:      "pages.example.com",
-				ForgejoHost:      "https://git.example.com",
-				LetsEncryptEmail: "admin@example.com",
-			},
-			errMsg: "letsEncryptEndpoint is required",
-		},
-		{
-			name: "missing LetsEncryptEmail",
-			config: &Config{
-				PagesDomain:         "pages.example.com",
-				ForgejoHost:         "https://git.example.com",
-				LetsEncryptEndpoint: "https://acme-staging-v02.api.letsencrypt.org/directory",
-			},
-			errMsg: "letsEncryptEmail is required",
 		},
 	}
 
@@ -325,10 +301,8 @@ func TestDetectContentType(t *testing.T) {
 // TestServeHTTP tests the ServeHTTP method with HTTPS redirect.
 func TestServeHTTPRedirect(t *testing.T) {
 	config := &Config{
-		PagesDomain:         "pages.example.com",
-		ForgejoHost:         "https://git.example.com",
-		LetsEncryptEndpoint: "https://acme-staging-v02.api.letsencrypt.org/directory",
-		LetsEncryptEmail:    "admin@example.com",
+		PagesDomain: "pages.example.com",
+		ForgejoHost: "https://git.example.com",
 	}
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

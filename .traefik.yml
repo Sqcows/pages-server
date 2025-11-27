@@ -1,13 +1,11 @@
 displayName: Forgejo Pages Server
 type: middleware
-import: github.com/SquareCows/pages-server
+import: code.squarecows.com/SquareCows/pages-server
 summary: Static site hosting for Forgejo/Gitea repositories with custom domains and automatic HTTPS
 testData:
   pagesDomain: pages.example.com
   forgejoHost: https://git.example.com
   forgejoToken: test-token-12345
-  letsEncryptEndpoint: https://acme-staging-v02.api.letsencrypt.org/directory
-  letsEncryptEmail: admin@example.com
   cloudflareAPIKey: test-cloudflare-key
   cloudflareZoneID: test-zone-id
   errorPagesRepo: system/error-pages

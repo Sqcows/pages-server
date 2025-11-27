@@ -13,7 +13,7 @@
 experimental:
   plugins:
     pages-server:
-      moduleName: github.com/SquareCows/pages-server
+      moduleName: code.squarecows.com/SquareCows/pages-server
       version: v0.0.1
 
 # Define entry points
@@ -79,15 +79,13 @@ http:
           # Required settings
           pagesDomain: pages.example.com
           forgejoHost: https://git.example.com
-          letsEncryptEndpoint: https://acme-v02.api.letsencrypt.org/directory
-          letsEncryptEmail: admin@example.com
+
+          # Optional: Cloudflare DNS management for custom domains
+          cloudflareAPIKey: your-cloudflare-api-key-here
+          cloudflareZoneID: your-cloudflare-zone-id-here
 
           # Optional: Forgejo API token (required for private repositories)
           forgejoToken: your-forgejo-api-token-here
-
-          # Optional: Cloudflare DNS settings (for custom domains)
-          cloudflareAPIKey: your-cloudflare-api-key-here
-          cloudflareZoneID: your-cloudflare-zone-id-here
 
           # Optional: Custom error pages repository
           errorPagesRepo: system/error-pages

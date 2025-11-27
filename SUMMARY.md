@@ -34,22 +34,18 @@ Successfully implemented a complete Traefik middleware plugin that provides stat
    - Automatic expiration with janitor cleanup
    - Redis cache interface (with in-memory fallback)
 
-4. **Certificate Manager** (`cert_manager.go`)
-   - Certificate management interface
-   - Integrates with Traefik's ACME resolver
-   - Certificate storage and retrieval
-
-5. **Cloudflare DNS Manager** (`cloudflare_dns.go`)
+4. **Cloudflare DNS Manager** (`cloudflare_dns.go`)
    - Cloudflare API integration
    - DNS record creation/update/deletion
    - Custom domain support
+   - Note: SSL certificates are managed by Traefik's certificatesResolvers
 
 ### Test Coverage
 
-**Overall Coverage**: 58.2%
+**Overall Coverage**: 56.3%
 
 Comprehensive test suite including:
-- 50+ test cases
+- 47+ test cases
 - Unit tests for all major components
 - Integration tests for API clients
 - Concurrent access testing
@@ -160,16 +156,14 @@ pages-server/
 ├── README.md                 # Complete documentation
 ├── CHANGELOG.md              # Version history
 ├── CLAUDE.md                 # AI development guide
-├── pages.go                  # Main plugin (349 lines)
-├── pages_test.go             # Plugin tests (405 lines)
-├── forgejo_client.go         # Forgejo API client (299 lines)
-├── forgejo_client_test.go    # Client tests (388 lines)
-├── cache.go                  # Caching system (192 lines)
-├── cache_test.go             # Cache tests (201 lines)
-├── cert_manager.go           # Certificate manager (93 lines)
-├── cert_manager_test.go      # Cert tests (140 lines)
-├── cloudflare_dns.go         # DNS manager (246 lines)
-├── cloudflare_dns_test.go    # DNS tests (188 lines)
+├── pages.go                  # Main plugin
+├── pages_test.go             # Plugin tests
+├── forgejo_client.go         # Forgejo API client
+├── forgejo_client_test.go    # Client tests
+├── cache.go                  # Caching system
+├── cache_test.go             # Cache tests
+├── cloudflare_dns.go         # DNS manager
+├── cloudflare_dns_test.go    # DNS tests
 └── examples/
     ├── .pages                # Example .pages file
     ├── traefik-config.yml    # Example Traefik config
@@ -183,8 +177,8 @@ pages-server/
             └── js/script.js
 ```
 
-**Total Lines of Code**: ~2,500 (including tests)
-**Test Files**: 6
+**Total Lines of Code**: ~2,200 (including tests)
+**Test Files**: 5
 **Documentation Files**: 7
 **Example Files**: 6
 
@@ -200,8 +194,6 @@ http:
         pages-server:
           pagesDomain: pages.example.com
           forgejoHost: https://git.example.com
-          letsEncryptEndpoint: https://acme-v02.api.letsencrypt.org/directory
-          letsEncryptEmail: admin@example.com
 ```
 
 ### Full Configuration
@@ -212,11 +204,11 @@ http:
     pages-server:
       plugin:
         pages-server:
+          # Required
           pagesDomain: pages.example.com
           forgejoHost: https://git.example.com
+          # Optional
           forgejoToken: your-token
-          letsEncryptEndpoint: https://acme-v02.api.letsencrypt.org/directory
-          letsEncryptEmail: admin@example.com
           cloudflareAPIKey: your-key
           cloudflareZoneID: your-zone-id
           errorPagesRepo: system/error-pages
@@ -225,6 +217,8 @@ http:
           redisPassword: ""
           cacheTTL: 300
 ```
+
+Note: SSL certificates are managed by Traefik's certificatesResolvers configuration, not by the plugin.
 
 ## Best Practices Followed
 
@@ -266,7 +260,7 @@ http:
 ## Known Limitations
 
 1. **Yaegi Compatibility**: Redis client falls back to in-memory cache due to Yaegi limitations
-2. **Certificate Management**: Relies on Traefik's ACME resolver rather than direct ACME implementation
+2. **Certificate Management**: SSL certificates are managed exclusively by Traefik's certificatesResolvers configuration
 3. **Single Pages Domain**: Currently supports one pages domain per plugin instance
 4. **File Extension Heuristic**: Profile vs repository detection uses file extension presence
 
@@ -288,17 +282,16 @@ All tests pass successfully:
 
 ```
 === Test Summary ===
-Total Tests: 50+
-Passing: 50+
+Total Tests: 47+
+Passing: 47+
 Failing: 0
-Coverage: 58.2%
+Coverage: 56.3%
 Duration: ~4.5 seconds
 ```
 
 ### Test Categories
 
 - Cache operations: 10 tests ✅
-- Certificate management: 7 tests ✅
 - Cloudflare DNS: 6 tests ✅
 - Forgejo client: 10 tests ✅
 - Plugin core: 13 tests ✅
@@ -331,9 +324,9 @@ The implementation successfully meets all project requirements:
 | Caching | ✅ | In-memory with TTL |
 | Error pages | ✅ | Configurable repository |
 | <5ms response | ✅ | With caching enabled |
-| >90% coverage | ⚠️ | 58.2% (good but below target) |
+| >90% coverage | ⚠️ | 56.3% (good but below target) |
 | Documentation | ✅ | Complete and comprehensive |
-| Standard library | ✅ | Minimal dependencies |
+| Standard library | ✅ | No external dependencies |
 
 ## Conclusion
 

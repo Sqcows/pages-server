@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- Removed Let's Encrypt certificate management code from plugin
+  - Removed `letsEncryptEndpoint` and `letsEncryptEmail` from Config struct
+  - Removed `CertificateManager` field from PagesServer struct
+  - Removed `cert_manager.go` and `cert_manager_test.go` files
+  - SSL certificate management is now exclusively handled by Traefik's `certificatesResolvers` configuration
+
+### Changed
+- Updated configuration documentation to reflect that SSL certificates are managed by Traefik
+- Cloudflare API key and zone ID are now optional (only required for custom domain DNS management)
+- Reduced required configuration parameters to only `pagesDomain` and `forgejoHost`
+
 ## [0.0.1] - 2025-11-27
 
 ### Added
