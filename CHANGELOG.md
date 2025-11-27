@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2] - 2025-11-27
+
+### Added
+- GPLv3 license with full compliance
+  - Added LICENSE file with complete GPLv3 text
+  - Added GPLv3 license headers to all Go source files
+  - Added GPLv3 license headers to YAML configuration files
+  - Copyright (C) 2025 SquareCows
+
 ### Removed
 - Removed Cloudflare DNS management code from plugin
   - Removed `cloudflareAPIKey` and `cloudflareZoneID` from Config struct
@@ -21,10 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Custom domains now require manual DNS configuration with users' DNS provider
+- Updated module path from `github.com/SquareCows/pages-server` to `code.squarecows.com/SquareCows/pages-server`
 - Updated configuration documentation to reflect manual DNS management approach
 - Updated all example configurations to remove Cloudflare-specific settings
 - Simplified configuration - only `pagesDomain` and `forgejoHost` are required
 - Plugin now focuses exclusively on serving static files from Forgejo repositories
+
+### Improved
+- Test coverage increased from 56.3% to 74.9%
+- Reduced codebase by 741 lines (removed certificate and DNS management)
+- Clearer separation of concerns: plugin serves files, Traefik handles SSL
+- More flexible DNS provider support (any provider, not just Cloudflare)
 
 ## [0.0.1] - 2025-11-27
 
@@ -64,5 +80,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Troubleshooting guide
 - API documentation in code comments
 
-[Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.1...HEAD
+[Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.2...HEAD
+[0.0.2]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.1...v0.0.2
 [0.0.1]: https://code.squarecows.com/SquareCows/pages-server/releases/tag/v0.0.1
