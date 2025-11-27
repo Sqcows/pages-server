@@ -14,8 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Serves static files from `public/` folders in Forgejo/Gitea repositories
 - Automatic HTTPS via Traefik's certificatesResolvers with HTTP→HTTPS redirect
-- Custom domain support (SSL certificates managed by Traefik)
-- Cloudflare DNS integration for custom domains
+- Custom domain support with manual DNS configuration (SSL certificates managed by Traefik)
 - URL format: `$git_username.$configured_domain/$repository`
 - Profile sites at `$git_username.$configured_domain/` (from `.profile` directory)
 - Only serves repositories with both `public/` folder and `.pages` file
@@ -41,13 +40,11 @@ The plugin is configured via Traefik's YAML configuration with the following par
 
 **Optional:**
 - Forgejo API token (for private repositories)
-- Cloudflare API key (for custom domain DNS management)
-- Cloudflare zone ID (for custom domain DNS management)
 - Error pages repository
 - Redis caching configuration
 
 **Custom Domain Configuration:**
-Custom domains are specified in the `.pages` file within each repository.
+Custom domains are specified in the `.pages` file within each repository. Users must manually create DNS records (A or CNAME) pointing to the Traefik server IP address.
 
 **SSL Certificate Configuration:**
 SSL certificates are managed by Traefik's `certificatesResolvers` configuration, not by the plugin.
@@ -71,7 +68,11 @@ For a repository to be served, it must have:
 - Plugin creation guide: https://plugins.traefik.io/create
 - Uses Forgejo API to access repository contents
 - SSL certificates managed by Traefik's certificatesResolvers (not by plugin)
-- Updates Cloudflare DNS records for custom domains (optional)
+- Users manually configure DNS records for custom domains with their DNS provider
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 (GPLv3). All source files must include the GPLv3 license header at the top of the file.
 
 ## Development
 

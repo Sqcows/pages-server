@@ -1,3 +1,18 @@
+# Copyright (C) 2025 SquareCows
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 # Example Traefik Configuration for Forgejo Pages Server Plugin
 #
 # This file demonstrates how to configure Traefik to use the pages-server plugin.
@@ -80,10 +95,6 @@ http:
           pagesDomain: pages.example.com
           forgejoHost: https://git.example.com
 
-          # Optional: Cloudflare DNS management for custom domains
-          cloudflareAPIKey: your-cloudflare-api-key-here
-          cloudflareZoneID: your-cloudflare-zone-id-here
-
           # Optional: Forgejo API token (required for private repositories)
           forgejoToken: your-forgejo-api-token-here
 
@@ -138,9 +149,6 @@ http:
 #     ports:
 #       - "80:80"
 #       - "443:443"
-#     environment:
-#       - CLOUDFLARE_EMAIL=your-email@example.com
-#       - CLOUDFLARE_API_KEY=your-cloudflare-api-key
 #     volumes:
 #       - /var/run/docker.sock:/var/run/docker.sock:ro
 #       - ./traefik.yml:/etc/traefik/traefik.yml:ro
@@ -156,21 +164,27 @@ http:
 
 ---
 # ============================================================================
-# CLOUDFLARE DNS SETUP
+# DNS SETUP FOR CUSTOM DOMAINS
 # ============================================================================
-# To use custom domains with Cloudflare:
+# To use custom domains, you must manually configure DNS records with your
+# DNS provider:
 #
-# 1. Create an API token in Cloudflare with Zone:DNS:Edit permissions
-# 2. Get your Zone ID from the Cloudflare dashboard
-# 3. Add the credentials to the plugin configuration above
-# 4. The plugin will automatically create DNS records for custom domains
+# 1. For wildcard pages domain support:
+#    - Type: A
+#    - Name: *.pages.example.com
+#    - Value: [Your Traefik server IP]
 #
-# Alternatively, manually create DNS records:
-# - Type: A
-# - Name: *.pages.example.com
-# - Value: [Your Traefik server IP]
-# - Proxy status: DNS only (for Let's Encrypt HTTP challenge)
-#              or Proxied (if using Cloudflare SSL)
+# 2. For specific custom domains (configured in .pages files):
+#    - Type: A
+#    - Name: www.example.com
+#    - Value: [Your Traefik server IP]
+#    OR
+#    - Type: CNAME
+#    - Name: www.example.com
+#    - Value: username.pages.example.com
+#
+# 3. Traefik will automatically handle SSL certificate generation via
+#    Let's Encrypt for all configured domains
 
 ---
 # ============================================================================
@@ -180,10 +194,6 @@ http:
 #
 # In your docker-compose.yml or system environment:
 #   FORGEJO_API_TOKEN=your-token
-#   CLOUDFLARE_API_KEY=your-key
-#   CLOUDFLARE_ZONE_ID=your-zone-id
 #
 # Then reference them in dynamic.yml:
 #   forgejoToken: ${FORGEJO_API_TOKEN}
-#   cloudflareAPIKey: ${CLOUDFLARE_API_KEY}
-#   cloudflareZoneID: ${CLOUDFLARE_ZONE_ID}

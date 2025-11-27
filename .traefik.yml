@@ -6,6 +6,4 @@ testData:
   pagesDomain: pages.example.com
   forgejoHost: https://git.example.com
   forgejoToken: test-token-12345
-  cloudflareAPIKey: test-cloudflare-key
-  cloudflareZoneID: test-zone-id
   errorPagesRepo: system/error-pages

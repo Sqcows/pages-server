@@ -34,12 +34,6 @@ Successfully implemented a complete Traefik middleware plugin that provides stat
    - Automatic expiration with janitor cleanup
    - Redis cache interface (with in-memory fallback)
 
-4. **Cloudflare DNS Manager** (`cloudflare_dns.go`)
-   - Cloudflare API integration
-   - DNS record creation/update/deletion
-   - Custom domain support
-   - Note: SSL certificates are managed by Traefik's certificatesResolvers
-
 ### Test Coverage
 
 **Overall Coverage**: 56.3%
@@ -89,8 +83,7 @@ All tests pass successfully.
 
 #### ✅ Custom Domains
 - [x] .pages file configuration
-- [x] Cloudflare DNS integration
-- [x] Automatic DNS record creation
+- [x] Manual DNS configuration with user's DNS provider
 - [x] SSL certificate support (via Traefik)
 
 #### ✅ Error Handling
@@ -112,7 +105,7 @@ All tests pass successfully.
 - **Language**: Go 1.23
 - **Framework**: Traefik v2.0+ plugin system
 - **Interpreter**: Yaegi (embedded Go interpreter)
-- **APIs**: Forgejo/Gitea API, Cloudflare API
+- **APIs**: Forgejo/Gitea API
 - **Protocols**: HTTP/HTTPS, REST
 - **Caching**: In-memory (Redis interface available)
 
@@ -138,11 +131,11 @@ All tests pass successfully.
 │  │          └──────────────────┘             │  │
 │  └───────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
-              ↓                      ↓
-    ┌─────────────────┐    ┌──────────────────┐
-    │ Forgejo/Gitea   │    │ Cloudflare DNS   │
-    │    API          │    │      API         │
-    └─────────────────┘    └──────────────────┘
+              ↓
+    ┌─────────────────┐
+    │ Forgejo/Gitea   │
+    │    API          │
+    └─────────────────┘
 ```
 
 ### File Structure
@@ -162,8 +155,6 @@ pages-server/
 ├── forgejo_client_test.go    # Client tests
 ├── cache.go                  # Caching system
 ├── cache_test.go             # Cache tests
-├── cloudflare_dns.go         # DNS manager
-├── cloudflare_dns_test.go    # DNS tests
 └── examples/
     ├── .pages                # Example .pages file
     ├── traefik-config.yml    # Example Traefik config
@@ -177,8 +168,8 @@ pages-server/
             └── js/script.js
 ```
 
-**Total Lines of Code**: ~2,200 (including tests)
-**Test Files**: 5
+**Total Lines of Code**: ~2,000 (including tests)
+**Test Files**: 4
 **Documentation Files**: 7
 **Example Files**: 6
 
@@ -209,8 +200,6 @@ http:
           forgejoHost: https://git.example.com
           # Optional
           forgejoToken: your-token
-          cloudflareAPIKey: your-key
-          cloudflareZoneID: your-zone-id
           errorPagesRepo: system/error-pages
           redisHost: localhost
           redisPort: 6379
@@ -292,7 +281,6 @@ Duration: ~4.5 seconds
 ### Test Categories
 
 - Cache operations: 10 tests ✅
-- Cloudflare DNS: 6 tests ✅
 - Forgejo client: 10 tests ✅
 - Plugin core: 13 tests ✅
 - Concurrent access: 4 tests ✅
@@ -303,8 +291,7 @@ Before deploying to production:
 
 - [ ] Configure Traefik static configuration with plugin
 - [ ] Set up Let's Encrypt certificate resolver
-- [ ] Configure Cloudflare credentials (for custom domains)
-- [ ] Set up DNS records (*.pages.example.com)
+- [ ] Set up DNS records (*.pages.example.com) with your DNS provider
 - [ ] Create system error-pages repository (optional)
 - [ ] Configure Redis (optional)
 - [ ] Test with a sample repository

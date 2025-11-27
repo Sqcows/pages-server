@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Removed
+- Removed Cloudflare DNS management code from plugin
+  - Removed `cloudflareAPIKey` and `cloudflareZoneID` from Config struct
+  - Removed `CloudflareDNSManager` field from PagesServer struct
+  - Removed `cloudflare_dns.go` and `cloudflare_dns_test.go` files
+  - Users must now manually configure DNS records with their DNS provider of choice
 - Removed Let's Encrypt certificate management code from plugin
   - Removed `letsEncryptEndpoint` and `letsEncryptEmail` from Config struct
   - Removed `CertificateManager` field from PagesServer struct
@@ -15,9 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - SSL certificate management is now exclusively handled by Traefik's `certificatesResolvers` configuration
 
 ### Changed
-- Updated configuration documentation to reflect that SSL certificates are managed by Traefik
-- Cloudflare API key and zone ID are now optional (only required for custom domain DNS management)
-- Reduced required configuration parameters to only `pagesDomain` and `forgejoHost`
+- Custom domains now require manual DNS configuration with users' DNS provider
+- Updated configuration documentation to reflect manual DNS management approach
+- Updated all example configurations to remove Cloudflare-specific settings
+- Simplified configuration - only `pagesDomain` and `forgejoHost` are required
+- Plugin now focuses exclusively on serving static files from Forgejo repositories
 
 ## [0.0.1] - 2025-11-27
 
@@ -27,7 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic HTTPS via Traefik's Let's Encrypt ACME resolver
 - HTTP to HTTPS redirect functionality
 - Custom domain support with `.pages` file configuration
-- Cloudflare DNS integration for custom domains
 - Profile sites served from `.profile` repository
 - Custom error pages support via configurable repository
 - In-memory caching with configurable TTL

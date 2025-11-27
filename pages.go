@@ -1,3 +1,18 @@
+// Copyright (C) 2025 SquareCows
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 // Package pages_server provides a Traefik middleware plugin for serving static sites
 // from Forgejo/Gitea repositories with automatic HTTPS and custom domain support.
 package pages_server
@@ -20,12 +35,6 @@ type Config struct {
 
 	// ForgejoToken is the API token for accessing Forgejo (optional for public repos)
 	ForgejoToken string `json:"forgejoToken,omitempty"`
-
-	// CloudflareAPIKey is the API key for Cloudflare DNS management
-	CloudflareAPIKey string `json:"cloudflareAPIKey,omitempty"`
-
-	// CloudflareZoneID is the Zone ID for Cloudflare DNS
-	CloudflareZoneID string `json:"cloudflareZoneID,omitempty"`
 
 	// ErrorPagesRepo is the repository containing custom error pages (format: username/repository)
 	ErrorPagesRepo string `json:"errorPagesRepo,omitempty"`
@@ -57,7 +66,6 @@ type PagesServer struct {
 	name          string
 	config        *Config
 	forgejoClient *ForgejoClient
-	dnsManager    *CloudflareDNSManager
 	cache         Cache
 	mu            sync.RWMutex
 	errorPages    map[int][]byte
@@ -76,12 +84,6 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	// Initialize Forgejo client
 	forgejoClient := NewForgejoClient(config.ForgejoHost, config.ForgejoToken)
 
-	// Initialize Cloudflare DNS manager (optional)
-	var dnsManager *CloudflareDNSManager
-	if config.CloudflareAPIKey != "" && config.CloudflareZoneID != "" {
-		dnsManager = NewCloudfllareDNSManager(config.CloudflareAPIKey, config.CloudflareZoneID)
-	}
-
 	// Initialize cache (Redis or in-memory)
 	var cache Cache
 	if config.RedisHost != "" {
@@ -95,7 +97,6 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		name:          name,
 		config:        config,
 		forgejoClient: forgejoClient,
-		dnsManager:    dnsManager,
 		cache:         cache,
 		errorPages:    make(map[int][]byte),
 	}

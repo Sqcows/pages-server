@@ -7,8 +7,7 @@ A Traefik middleware plugin that provides static site hosting for Forgejo and Gi
 - **Static Site Hosting**: Serve static files from `public/` folders in Forgejo/Gitea repositories
 - **Automatic HTTPS**: Seamless integration with Traefik's Let's Encrypt ACME resolver
 - **HTTP to HTTPS Redirect**: Automatic redirection from HTTP to HTTPS
-- **Custom Domains**: Support for custom domains with automatic SSL certificates
-- **Cloudflare DNS Integration**: Automatic DNS record management for custom domains
+- **Custom Domains**: Support for custom domains with manual DNS configuration
 - **Profile Sites**: Personal pages served from `.profile` repository
 - **Custom Error Pages**: Configurable error pages from a designated repository
 - **Caching**: Built-in memory cache with optional Redis support
@@ -93,8 +92,6 @@ http:
           forgejoHost: https://git.example.com
           # Optional parameters
           forgejoToken: your-forgejo-api-token  # Optional for public repos
-          cloudflareAPIKey: your-cloudflare-api-key  # Optional for custom domains
-          cloudflareZoneID: your-zone-id  # Optional for custom domains
           errorPagesRepo: system/error-pages  # Optional
           redisHost: localhost  # Optional
           redisPort: 6379       # Optional
@@ -138,8 +135,6 @@ http:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `forgejoToken` | string | "" | API token for Forgejo (required for private repos) |
-| `cloudflareAPIKey` | string | "" | Cloudflare API key for DNS management (required for custom domains) |
-| `cloudflareZoneID` | string | "" | Cloudflare zone ID (required for custom domains) |
 | `errorPagesRepo` | string | "" | Repository for custom error pages (format: `username/repository`) |
 | `redisHost` | string | "" | Redis server host for caching |
 | `redisPort` | int | 6379 | Redis server port |
@@ -156,8 +151,9 @@ To use a custom domain for your site:
    custom_domain: www.example.com
    ```
 
-2. The plugin will automatically (if Cloudflare is configured):
-   - Create DNS A records pointing to your Traefik instance
+2. Manually create DNS records with your DNS provider:
+   - Create an A record pointing `www.example.com` to your Traefik server's IP address
+   - Or create a CNAME record pointing to your pages domain (e.g., `username.pages.example.com`)
 
 3. Traefik's certificatesResolvers will automatically:
    - Request SSL certificates via Let's Encrypt
@@ -225,8 +221,6 @@ go tool cover -html=coverage.out
 ├── forgejo_client_test.go
 ├── cache.go              # Caching implementation
 ├── cache_test.go
-├── cloudflare_dns.go     # Cloudflare DNS integration
-├── cloudflare_dns_test.go
 ├── README.md
 └── CHANGELOG.md
 ```
@@ -293,10 +287,11 @@ error-pages/
 
 ### Custom domain not working
 
-1. Verify Cloudflare API credentials are correct
+1. Verify DNS records are correctly configured with your DNS provider
 2. Check that the custom domain is specified in `.pages` file
 3. Allow time for DNS propagation (up to 48 hours)
 4. Verify Traefik certificate resolver is configured
+5. Ensure the DNS record points to your Traefik server's IP address
 
 ### Performance issues
 
@@ -317,7 +312,13 @@ Contributions are welcome! Please:
 
 ## License
 
-[Your license here]
+This project is licensed under the GNU General Public License v3.0 (GPLv3) - see the [LICENSE](LICENSE) file for details.
+
+Copyright (C) 2025 SquareCows
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 ## Support
 
