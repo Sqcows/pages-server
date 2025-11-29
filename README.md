@@ -476,7 +476,7 @@ For each custom domain, the plugin writes the following keys to Redis:
 ```
 traefik/http/routers/custom-{domain}/rule = "Host(`example.com`)"
 traefik/http/routers/custom-{domain}/entryPoints/0 = "websecure"
-traefik/http/routers/custom-{domain}/middlewares/0 = "pages-server"
+traefik/http/routers/custom-{domain}/middlewares/0 = "pages-server@file"
 traefik/http/routers/custom-{domain}/service = "noop@internal"
 traefik/http/routers/custom-{domain}/tls/certResolver = "letsencrypt-http"
 traefik/http/routers/custom-{domain}/priority = "10"

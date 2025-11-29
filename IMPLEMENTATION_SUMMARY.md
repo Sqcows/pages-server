@@ -43,7 +43,7 @@ Features:
 - Writes 6 configuration keys per domain:
   - rule: Host rule for the domain
   - entryPoints/0: "websecure" (HTTPS)
-  - middlewares/0: "pages-server"
+  - middlewares/0: "pages-server@file"
   - service: "noop@internal"
   - tls/certResolver: Configured cert resolver
   - priority: "10"

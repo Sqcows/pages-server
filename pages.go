@@ -372,7 +372,7 @@ func (ps *PagesServer) registerTraefikRouter(ctx context.Context, customDomain s
 	configs := map[string]string{
 		fmt.Sprintf("%s/http/routers/%s/rule", rootKey, routerName):             fmt.Sprintf("Host(`%s`)", customDomain),
 		fmt.Sprintf("%s/http/routers/%s/entryPoints/0", rootKey, routerName):    "websecure",
-		fmt.Sprintf("%s/http/routers/%s/middlewares/0", rootKey, routerName):    "pages-server",
+		fmt.Sprintf("%s/http/routers/%s/middlewares/0", rootKey, routerName):    "pages-server@file",
 		fmt.Sprintf("%s/http/routers/%s/service", rootKey, routerName):          "noop@internal",
 		fmt.Sprintf("%s/http/routers/%s/tls/certResolver", rootKey, routerName): ps.config.TraefikRedisCertResolver,
 		fmt.Sprintf("%s/http/routers/%s/priority", rootKey, routerName):         "10",

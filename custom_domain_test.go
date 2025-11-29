@@ -348,7 +348,7 @@ func TestRegisterTraefikRouterWithRedis(t *testing.T) {
 	expectedConfigs := map[string]string{
 		"traefik/http/routers/" + routerName + "/rule":             "Host(`test.example.com`)",
 		"traefik/http/routers/" + routerName + "/entryPoints/0":    "websecure",
-		"traefik/http/routers/" + routerName + "/middlewares/0":    "pages-server",
+		"traefik/http/routers/" + routerName + "/middlewares/0":    "pages-server@file",
 		"traefik/http/routers/" + routerName + "/service":          "noop@internal",
 		"traefik/http/routers/" + routerName + "/tls/certResolver": "letsencrypt-http",
 		"traefik/http/routers/" + routerName + "/priority":         "10",
