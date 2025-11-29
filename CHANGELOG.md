@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 2025-11-29
+
+### Fixed
+- **Router Configuration Documentation**: Corrected README.md router configuration examples
+  - Removed incorrect `tls.certResolver` from `pages-custom-domains-https` router
+  - Added clarification that individual domains get their own routers dynamically created in Redis
+  - Updated custom domain setup steps to include Redis provider configuration requirement
+  - Fixed configuration examples to match actual implementation behavior
+
+### Documentation
+- Updated custom domain setup instructions with Redis provider configuration step
+- Clarified that plugin creates individual routers in Redis for SSL certificate generation
+- Added notes explaining catch-all router behavior vs. individual Redis routers
+
 ## [0.0.4] - 2025-11-29
 
 ### Fixed

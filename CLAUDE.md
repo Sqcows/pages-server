@@ -77,7 +77,7 @@ This project is licensed under the GNU General Public License v3.0 (GPLv3). All 
 ## Development
 
 ### Version
-Current version: v0.0.4
+Current version: v0.0.5
 
 ### Repository
 https://code.squarecows.com/SquareCows/pages-server
