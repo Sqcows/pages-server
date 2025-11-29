@@ -467,14 +467,7 @@ http:
 
 The dynamically registered routers need a service to route to. Create a noop service:
 
-```yaml
-http:
-  services:
-    pages-noop:
-      loadBalancer:
-        servers:
-          - url: "http://127.0.0.1:1"  # Unused - middleware intercepts all requests
-```
+**Note**: No service configuration is required. The routers use Traefik's built-in `noop@internal` service since the middleware intercepts all requests.
 
 ### Router Registration Format
 
@@ -484,7 +477,7 @@ For each custom domain, the plugin writes the following keys to Redis:
 traefik/http/routers/custom-{domain}/rule = "Host(`example.com`)"
 traefik/http/routers/custom-{domain}/entryPoints/0 = "websecure"
 traefik/http/routers/custom-{domain}/middlewares/0 = "pages-server"
-traefik/http/routers/custom-{domain}/service = "pages-noop"
+traefik/http/routers/custom-{domain}/service = "noop@internal"
 traefik/http/routers/custom-{domain}/tls/certResolver = "letsencrypt-http"
 traefik/http/routers/custom-{domain}/priority = "10"
 ```

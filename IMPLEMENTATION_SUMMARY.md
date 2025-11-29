@@ -44,7 +44,7 @@ Features:
   - rule: Host rule for the domain
   - entryPoints/0: "websecure" (HTTPS)
   - middlewares/0: "pages-server"
-  - service: "pages-noop"
+  - service: "noop@internal"
   - tls/certResolver: Configured cert resolver
   - priority: "10"
 - Uses configurable TTL for router configs
@@ -117,7 +117,7 @@ For each custom domain, the plugin writes these Redis keys:
 traefik/http/routers/custom-{domain}/rule = "Host(`example.com`)"
 traefik/http/routers/custom-{domain}/entryPoints/0 = "websecure"
 traefik/http/routers/custom-{domain}/middlewares/0 = "pages-server"
-traefik/http/routers/custom-{domain}/service = "pages-noop"
+traefik/http/routers/custom-{domain}/service = "noop@internal"
 traefik/http/routers/custom-{domain}/tls/certResolver = "letsencrypt-http"
 traefik/http/routers/custom-{domain}/priority = "10"
 ```
@@ -186,9 +186,8 @@ To enable this feature:
 1. Configure Traefik's Redis provider in static config
 2. Set `redisHost` in plugin configuration
 3. Optionally customize `traefikRedisCertResolver`, `traefikRedisRouterTTL`, etc.
-4. Create a `pages-noop` service for routers to use
-5. Visit pages URL to register custom domain
-6. Traefik automatically handles SSL certificate provisioning
+4. Visit pages URL to register custom domain
+5. Traefik automatically handles SSL certificate provisioning (routers use `noop@internal` service)
 
 To disable:
 - Set `traefikRedisRouterEnabled: false` in plugin configuration
