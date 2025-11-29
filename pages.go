@@ -138,6 +138,14 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 
 // ServeHTTP implements the http.Handler interface.
 func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	// Pass through ACME HTTP-01 challenge requests to Traefik's certificate resolver.
+	// Let's Encrypt ACME challenges MUST be served over HTTP and cannot be redirected to HTTPS.
+	// These requests come from Let's Encrypt's validation servers to verify domain ownership.
+	if strings.HasPrefix(req.URL.Path, "/.well-known/acme-challenge/") {
+		ps.next.ServeHTTP(rw, req)
+		return
+	}
+
 	// Enforce HTTPS redirect if not already HTTPS
 	if req.Header.Get("X-Forwarded-Proto") == "http" {
 		// Construct HTTPS URL using URL.Path to avoid double-prefixing issues

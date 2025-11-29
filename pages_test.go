@@ -346,6 +346,181 @@ func TestServeHTTPRedirect(t *testing.T) {
 	}
 }
 
+// TestServeHTTPACMEChallenge tests that ACME challenge requests are passed through without redirect.
+func TestServeHTTPACMEChallenge(t *testing.T) {
+	config := &Config{
+		PagesDomain: "pages.example.com",
+		ForgejoHost: "https://git.example.com",
+	}
+
+	// Track if the next handler was called
+	nextHandlerCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandlerCalled = true
+		// Simulate Traefik's ACME handler responding
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ACME-challenge-token-response"))
+	})
+
+	handler, err := New(context.Background(), next, config, "test-plugin")
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	// Test ACME challenge request with HTTP protocol
+	req := httptest.NewRequest("GET", "http://example.com/.well-known/acme-challenge/token123", nil)
+	req.Header.Set("X-Forwarded-Proto", "http")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	// Verify the request was passed through to the next handler
+	if !nextHandlerCalled {
+		t.Error("Expected next handler to be called for ACME challenge, but it wasn't")
+	}
+
+	// Verify it was NOT redirected
+	if rec.Code == http.StatusMovedPermanently || rec.Code == http.StatusFound {
+		t.Errorf("ACME challenge should not be redirected, got status %d", rec.Code)
+	}
+
+	// Verify it returned OK from the next handler
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status %d from next handler, got %d", http.StatusOK, rec.Code)
+	}
+
+	// Verify the response body from the next handler
+	body := rec.Body.String()
+	if body != "ACME-challenge-token-response" {
+		t.Errorf("Expected ACME response from next handler, got %q", body)
+	}
+}
+
+// TestServeHTTPACMEChallengeVariations tests different ACME challenge path variations.
+func TestServeHTTPACMEChallengeVariations(t *testing.T) {
+	config := &Config{
+		PagesDomain: "pages.example.com",
+		ForgejoHost: "https://git.example.com",
+	}
+
+	tests := []struct {
+		name           string
+		path           string
+		shouldPassThru bool
+	}{
+		{
+			name:           "standard ACME challenge",
+			path:           "/.well-known/acme-challenge/token123",
+			shouldPassThru: true,
+		},
+		{
+			name:           "ACME challenge with long token",
+			path:           "/.well-known/acme-challenge/very-long-token-string-123456789",
+			shouldPassThru: true,
+		},
+		{
+			name:           "ACME challenge at root",
+			path:           "/.well-known/acme-challenge/",
+			shouldPassThru: true,
+		},
+		{
+			name:           "normal well-known path",
+			path:           "/.well-known/security.txt",
+			shouldPassThru: false,
+		},
+		{
+			name:           "normal root path",
+			path:           "/",
+			shouldPassThru: false,
+		},
+		{
+			name:           "normal file path",
+			path:           "/index.html",
+			shouldPassThru: false,
+		},
+		{
+			name:           "path that starts similar to ACME",
+			path:           "/.well-known/other",
+			shouldPassThru: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nextHandlerCalled := false
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				nextHandlerCalled = true
+				w.WriteHeader(http.StatusOK)
+			})
+
+			handler, err := New(context.Background(), next, config, "test-plugin")
+			if err != nil {
+				t.Fatalf("New failed: %v", err)
+			}
+
+			req := httptest.NewRequest("GET", "http://example.com"+tt.path, nil)
+			req.Header.Set("X-Forwarded-Proto", "http")
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			if tt.shouldPassThru {
+				// Should pass through to next handler
+				if !nextHandlerCalled {
+					t.Errorf("Expected next handler to be called for path %q, but it wasn't", tt.path)
+				}
+				if rec.Code == http.StatusMovedPermanently {
+					t.Errorf("Path %q should not be redirected, got status %d", tt.path, rec.Code)
+				}
+			} else {
+				// Should be redirected (not passed through)
+				if rec.Code != http.StatusMovedPermanently {
+					// Note: nextHandlerCalled might be true for non-ACME paths that get redirected
+					// We only care about the redirect status
+					if nextHandlerCalled && rec.Code != http.StatusMovedPermanently {
+						t.Errorf("Path %q should be redirected to HTTPS, got status %d", tt.path, rec.Code)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestServeHTTPACMEChallengeWithHTTPS tests that ACME challenges work even with HTTPS.
+func TestServeHTTPACMEChallengeWithHTTPS(t *testing.T) {
+	config := &Config{
+		PagesDomain: "pages.example.com",
+		ForgejoHost: "https://git.example.com",
+	}
+
+	nextHandlerCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandlerCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler, err := New(context.Background(), next, config, "test-plugin")
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	// Test ACME challenge request with HTTPS protocol (edge case)
+	req := httptest.NewRequest("GET", "https://example.com/.well-known/acme-challenge/token123", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	// Should still pass through even with HTTPS
+	if !nextHandlerCalled {
+		t.Error("Expected next handler to be called for ACME challenge with HTTPS")
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
 // TestServeError tests the serveError method.
 func TestServeError(t *testing.T) {
 	ps := &PagesServer{
