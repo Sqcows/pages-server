@@ -311,11 +311,43 @@ go tool cover -html=coverage.out
 - **Go**: 1.21+
 - **Yaegi**: Compatible (uses standard library where possible)
 
+## Redis Caching
+
+The plugin includes a full Redis client implementation using only Go standard library, making it compatible with Traefik's Yaegi interpreter.
+
+### Features
+
+- **RESP Protocol**: Complete implementation of Redis Serialization Protocol
+- **Connection Pooling**: Efficient connection reuse for better performance
+- **Authentication**: Support for password-protected Redis servers
+- **Automatic Fallback**: Falls back to in-memory cache if Redis is unavailable
+- **TTL Support**: Automatic key expiration using SETEX command
+
+### Configuration
+
+```yaml
+http:
+  middlewares:
+    pages-server:
+      plugin:
+        pages-server:
+          pagesDomain: pages.example.com
+          forgejoHost: https://git.example.com
+          redisHost: localhost
+          redisPort: 6379
+          redisPassword: ""  # Optional
+          cacheTTL: 300
+          customDomainCacheTTL: 600
+```
+
+### Testing Redis
+
+See [REDIS_TESTING.md](REDIS_TESTING.md) for comprehensive testing instructions and manual integration tests.
+
 ## Limitations
 
 - The plugin runs in Traefik's Yaegi interpreter, which has some limitations compared to compiled Go
 - SSL certificate management is handled by Traefik's certificatesResolvers configuration, not by the plugin
-- Redis caching currently falls back to in-memory cache due to Yaegi compatibility
 
 ## Examples
 

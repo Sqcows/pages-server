@@ -16,6 +16,7 @@
 package pages_server
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -221,6 +222,7 @@ func TestMemoryCacheConcurrency(t *testing.T) {
 // TestNewRedisCache tests the NewRedisCache function.
 func TestNewRedisCache(t *testing.T) {
 	cache := NewRedisCache("localhost", 6379, "", 300)
+	defer cache.Close()
 
 	if cache == nil {
 		t.Fatal("NewRedisCache returned nil")
@@ -239,12 +241,14 @@ func TestNewRedisCache(t *testing.T) {
 	}
 }
 
-// TestRedisCacheFallback tests that RedisCache falls back to MemoryCache.
-func TestRedisCacheFallback(t *testing.T) {
+// TestRedisCacheSetGet tests basic SET and GET operations with Redis.
+// This test requires a Redis/Valkey server running on localhost:6379.
+func TestRedisCacheSetGet(t *testing.T) {
 	cache := NewRedisCache("localhost", 6379, "", 300)
+	defer cache.Close()
 
-	key := "test-key"
-	value := []byte("test-value")
+	key := "test-key-setget"
+	value := []byte("test-value-123")
 
 	// Set a value
 	cache.Set(key, value)
@@ -260,10 +264,284 @@ func TestRedisCacheFallback(t *testing.T) {
 		t.Errorf("Expected value %q, got %q", string(value), string(got))
 	}
 
-	// Test delete
+	// Clean up
 	cache.Delete(key)
+}
+
+// TestRedisCacheDelete tests the DELETE operation.
+func TestRedisCacheDelete(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300)
+	defer cache.Close()
+
+	key := "test-key-delete"
+	value := []byte("test-value-delete")
+
+	// Set a value
+	cache.Set(key, value)
+
+	// Verify it exists
+	_, found := cache.Get(key)
+	if !found {
+		t.Error("Expected to find value before deletion")
+	}
+
+	// Delete it
+	cache.Delete(key)
+
+	// Verify it's gone
 	_, found = cache.Get(key)
 	if found {
 		t.Error("Expected value to be deleted")
+	}
+}
+
+// TestRedisCacheTTL tests that values expire after TTL.
+// This test requires a Redis/Valkey server running on localhost:6379.
+func TestRedisCacheTTL(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 2) // 2 second TTL
+	defer cache.Close()
+
+	key := "test-key-ttl"
+	value := []byte("test-value-ttl")
+
+	// Set a value
+	cache.Set(key, value)
+
+	// Value should be present immediately
+	_, found := cache.Get(key)
+	if !found {
+		t.Error("Expected to find value immediately after setting")
+	}
+
+	// Wait for expiration (2 seconds + buffer)
+	time.Sleep(3 * time.Second)
+
+	// Value should be expired in Redis
+	_, found = cache.Get(key)
+	if found {
+		t.Error("Expected value to be expired after TTL")
+	}
+}
+
+// TestRedisCacheGetNotFound tests GET with a non-existent key.
+func TestRedisCacheGetNotFound(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300)
+	defer cache.Close()
+
+	_, found := cache.Get("nonexistent-key-12345")
+	if found {
+		t.Error("Expected not to find non-existent key")
+	}
+}
+
+// TestRedisCacheFallbackOnConnectionFailure tests fallback to in-memory cache
+// when Redis is unavailable.
+func TestRedisCacheFallbackOnConnectionFailure(t *testing.T) {
+	// Connect to a non-existent Redis server
+	cache := NewRedisCache("localhost", 9999, "", 300)
+	defer cache.Close()
+
+	key := "test-key-fallback"
+	value := []byte("test-value-fallback")
+
+	// Set should fall back to in-memory cache
+	cache.Set(key, value)
+
+	// Get should retrieve from in-memory cache
+	got, found := cache.Get(key)
+	if !found {
+		t.Fatal("Expected to find value in fallback cache")
+	}
+
+	if string(got) != string(value) {
+		t.Errorf("Expected value %q, got %q", string(value), string(got))
+	}
+}
+
+// TestRedisCacheAuthentication tests Redis authentication.
+// This test requires a Redis/Valkey server with requirepass configured.
+// Skip if no password-protected Redis is available.
+func TestRedisCacheAuthentication(t *testing.T) {
+	// This test is skipped by default unless you have a Redis server
+	// with password authentication configured
+	t.Skip("Skipping authentication test - requires Redis with password")
+
+	password := "test-password"
+	cache := NewRedisCache("localhost", 6379, password, 300)
+	defer cache.Close()
+
+	key := "test-key-auth"
+	value := []byte("test-value-auth")
+
+	cache.Set(key, value)
+	got, found := cache.Get(key)
+
+	if !found {
+		t.Fatal("Expected to find value after authentication")
+	}
+
+	if string(got) != string(value) {
+		t.Errorf("Expected value %q, got %q", string(value), string(got))
+	}
+
+	cache.Delete(key)
+}
+
+// TestRedisCacheClear tests the FLUSHDB operation.
+func TestRedisCacheClear(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300)
+	defer cache.Close()
+
+	// Set multiple values
+	cache.Set("clear-key-1", []byte("value1"))
+	cache.Set("clear-key-2", []byte("value2"))
+	cache.Set("clear-key-3", []byte("value3"))
+
+	// Verify they're there
+	if _, found := cache.Get("clear-key-1"); !found {
+		t.Error("Expected to find clear-key-1")
+	}
+
+	// Clear the cache
+	cache.Clear()
+
+	// Verify they're gone
+	if _, found := cache.Get("clear-key-1"); found {
+		t.Error("Expected clear-key-1 to be cleared")
+	}
+	if _, found := cache.Get("clear-key-2"); found {
+		t.Error("Expected clear-key-2 to be cleared")
+	}
+	if _, found := cache.Get("clear-key-3"); found {
+		t.Error("Expected clear-key-3 to be cleared")
+	}
+}
+
+// TestRedisCacheConcurrency tests concurrent access to Redis cache.
+func TestRedisCacheConcurrency(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300)
+	defer cache.Close()
+
+	done := make(chan bool)
+
+	// Concurrent writes
+	for i := 0; i < 100; i++ {
+		go func(n int) {
+			key := fmt.Sprintf("concurrent-key-%d", n%10)
+			value := []byte(fmt.Sprintf("value-%d", n))
+			cache.Set(key, value)
+			done <- true
+		}(i)
+	}
+
+	// Wait for all writes to complete
+	for i := 0; i < 100; i++ {
+		<-done
+	}
+
+	// Concurrent reads
+	for i := 0; i < 100; i++ {
+		go func(n int) {
+			key := fmt.Sprintf("concurrent-key-%d", n%10)
+			cache.Get(key)
+			done <- true
+		}(i)
+	}
+
+	// Wait for all reads to complete
+	for i := 0; i < 100; i++ {
+		<-done
+	}
+
+	// Clean up
+	for i := 0; i < 10; i++ {
+		cache.Delete(fmt.Sprintf("concurrent-key-%d", i))
+	}
+}
+
+// TestRedisCacheBinaryData tests storing and retrieving binary data.
+func TestRedisCacheBinaryData(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300)
+	defer cache.Close()
+
+	key := "test-binary-key"
+	// Create some binary data with null bytes and special characters
+	value := []byte{0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd, 0x7f, 0x80, 0x81}
+
+	cache.Set(key, value)
+	got, found := cache.Get(key)
+
+	if !found {
+		t.Fatal("Expected to find binary value")
+	}
+
+	if len(got) != len(value) {
+		t.Fatalf("Expected length %d, got %d", len(value), len(got))
+	}
+
+	for i := range value {
+		if got[i] != value[i] {
+			t.Errorf("Byte at position %d: expected 0x%02x, got 0x%02x", i, value[i], got[i])
+		}
+	}
+
+	cache.Delete(key)
+}
+
+// TestRedisCacheLargeValue tests storing and retrieving large values.
+func TestRedisCacheLargeValue(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300)
+	defer cache.Close()
+
+	key := "test-large-key"
+	// Create a large value (1MB)
+	value := make([]byte, 1024*1024)
+	for i := range value {
+		value[i] = byte(i % 256)
+	}
+
+	cache.Set(key, value)
+	got, found := cache.Get(key)
+
+	if !found {
+		t.Fatal("Expected to find large value")
+	}
+
+	if len(got) != len(value) {
+		t.Fatalf("Expected length %d, got %d", len(value), len(got))
+	}
+
+	// Verify a few random bytes
+	for _, i := range []int{0, 1024, 1024 * 512, len(value) - 1} {
+		if got[i] != value[i] {
+			t.Errorf("Byte at position %d: expected 0x%02x, got 0x%02x", i, value[i], got[i])
+		}
+	}
+
+	cache.Delete(key)
+}
+
+// TestRedisCacheConnectionPool tests that the connection pool works correctly.
+func TestRedisCacheConnectionPool(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300)
+	defer cache.Close()
+
+	// Perform multiple operations that should reuse connections
+	for i := 0; i < 20; i++ {
+		key := fmt.Sprintf("pool-test-%d", i)
+		value := []byte(fmt.Sprintf("value-%d", i))
+
+		cache.Set(key, value)
+		got, found := cache.Get(key)
+
+		if !found {
+			t.Errorf("Failed to find key %s", key)
+		}
+
+		if string(got) != string(value) {
+			t.Errorf("Value mismatch for key %s", key)
+		}
+
+		cache.Delete(key)
 	}
 }
