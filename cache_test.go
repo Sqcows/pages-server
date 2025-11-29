@@ -545,3 +545,95 @@ func TestRedisCacheConnectionPool(t *testing.T) {
 		cache.Delete(key)
 	}
 }
+
+// TestRedisCacheSetWithTTL tests the SetWithTTL method.
+func TestRedisCacheSetWithTTL(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300)
+	defer cache.Close()
+
+	key := "test-key-setttl"
+	value := []byte("test-value-setttl")
+	customTTL := 2 // 2 second TTL
+
+	// Set with custom TTL
+	err := cache.SetWithTTL(key, value, customTTL)
+	if err != nil {
+		t.Fatalf("SetWithTTL failed: %v", err)
+	}
+
+	// Value should be present immediately
+	got, found := cache.Get(key)
+	if !found {
+		t.Fatal("Expected to find value immediately after setting")
+	}
+
+	if string(got) != string(value) {
+		t.Errorf("Expected value %q, got %q", string(value), string(got))
+	}
+
+	// Wait for expiration (2 seconds + buffer)
+	time.Sleep(3 * time.Second)
+
+	// Value should be expired
+	_, found = cache.Get(key)
+	if found {
+		t.Error("Expected value to be expired after custom TTL")
+	}
+}
+
+// TestRedisCacheSetWithTTLDifferentFromDefault tests that SetWithTTL uses custom TTL not default.
+func TestRedisCacheSetWithTTLDifferentFromDefault(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 10) // Default 10 second TTL
+	defer cache.Close()
+
+	key := "test-key-custom-ttl"
+	value := []byte("test-value-custom-ttl")
+	customTTL := 2 // 2 second TTL (shorter than default)
+
+	// Set with custom TTL
+	err := cache.SetWithTTL(key, value, customTTL)
+	if err != nil {
+		t.Fatalf("SetWithTTL failed: %v", err)
+	}
+
+	// Value should be present immediately
+	_, found := cache.Get(key)
+	if !found {
+		t.Fatal("Expected to find value immediately after setting")
+	}
+
+	// Wait for custom TTL to expire (should expire before default TTL)
+	time.Sleep(3 * time.Second)
+
+	// Value should be expired according to custom TTL
+	_, found = cache.Get(key)
+	if found {
+		t.Error("Expected value to be expired after custom TTL, not default TTL")
+	}
+}
+
+// TestRedisCacheSetWithTTLFallback tests that SetWithTTL falls back to memory cache on failure.
+func TestRedisCacheSetWithTTLFallback(t *testing.T) {
+	// Connect to a non-existent Redis server
+	cache := NewRedisCache("localhost", 9999, "", 300)
+	defer cache.Close()
+
+	key := "test-key-ttl-fallback"
+	value := []byte("test-value-ttl-fallback")
+
+	// SetWithTTL should fall back to in-memory cache and return error
+	err := cache.SetWithTTL(key, value, 300)
+	if err == nil {
+		t.Error("Expected error when Redis is unavailable")
+	}
+
+	// Value should still be retrievable from fallback cache
+	got, found := cache.Get(key)
+	if !found {
+		t.Fatal("Expected to find value in fallback cache")
+	}
+
+	if string(got) != string(value) {
+		t.Errorf("Expected value %q, got %q", string(value), string(got))
+	}
+}

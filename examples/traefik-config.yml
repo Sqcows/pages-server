@@ -35,12 +35,8 @@ experimental:
 entryPoints:
   web:
     address: ":80"
-    # Redirect HTTP to HTTPS
-    http:
-      redirections:
-        entryPoint:
-          to: websecure
-          scheme: https
+    # HTTP entrypoint - NO automatic redirect configured here
+    # The pages-server middleware handles ACME challenges and redirects
 
   websecure:
     address: ":443"
@@ -71,6 +67,14 @@ providers:
   file:
     filename: /etc/traefik/dynamic.yml
     watch: true
+
+  # Redis provider for dynamic router configuration
+  # Enables automatic SSL certificate provisioning for custom domains
+  redis:
+    endpoints:
+      - "valkey:6379"
+    rootKey: "traefik"
+    # password: ""  # Uncomment if authentication required
 
 # Logging
 log:
@@ -113,10 +117,21 @@ http:
           # redisPassword: ""
           # cacheTTL: 300
 
+          # Optional: Traefik Redis router integration (for automatic SSL certificates)
+          traefikRedisRouterEnabled: true  # Default: true
+          traefikRedisCertResolver: letsencrypt  # Which cert resolver to use
+          traefikRedisRouterTTL: 600  # Router config TTL in seconds (default: same as customDomainCacheTTL)
+          traefikRedisRootKey: traefik  # Redis root key for Traefik config
+
   # Define the routers for pages
+  # IMPORTANT: Split HTTP and HTTPS routers for correct ACME challenge handling
   routers:
-    # Router for pages domain (e.g., *.pages.example.com)
-    pages-domain:
+    # ========================================================================
+    # HTTPS ROUTERS (websecure entrypoint)
+    # ========================================================================
+
+    # Router for pages domain (e.g., *.pages.example.com) - HTTPS
+    pages-https:
       rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.pages.example.com`)"
       priority: 10  # Higher priority than custom domain router
       entryPoints:
@@ -131,9 +146,12 @@ http:
             sans:
               - "*.pages.example.com"
 
-    # Router for custom domains
-    # This catches all domains not matched by pages-domain router
-    pages-custom-domains:
+    # Router for custom domains - HTTPS
+    # This catches all domains not matched by pages-https router
+    # NOTE: When traefikRedisRouterEnabled is true, individual routers for
+    # custom domains are dynamically created in Redis with their own TLS config.
+    # This catch-all router provides fallback behavior.
+    pages-custom-domains-https:
       rule: "HostRegexp(`{domain:.+}`)"
       priority: 1  # Lower priority - catches all other domains
       entryPoints:
@@ -141,11 +159,20 @@ http:
       service: noop@internal
       middlewares:
         - pages-server
-      tls:
-        certResolver: letsencrypt  # Auto-provision SSL for custom domains
+      # TLS certificates managed by dynamically-created routers in Redis
+      # Individual routers are created per custom domain with certResolver
+      # If you disable traefikRedisRouterEnabled, uncomment the tls section:
+      # tls:
+      #   certResolver: letsencrypt
 
-    # HTTP to HTTPS redirect for all domains
-    pages-http-redirect:
+    # ========================================================================
+    # HTTP ROUTER (web entrypoint)
+    # ========================================================================
+    # Single HTTP router for all domains
+    # The pages-server middleware handles:
+    #   1. ACME challenge passthrough (/.well-known/acme-challenge/*)
+    #   2. HTTP to HTTPS redirect for all other requests
+    pages-http:
       rule: "HostRegexp(`{domain:.+}`)"
       entryPoints:
         - web
@@ -179,6 +206,23 @@ http:
 #       - ./logs:/var/log/traefik
 #     networks:
 #       - traefik
+#     depends_on:
+#       - valkey
+#
+#   # Redis-compatible cache (Valkey)
+#   # Required for Redis provider and optional for plugin caching
+#   valkey:
+#     image: valkey/valkey:latest
+#     container_name: valkey
+#     restart: unless-stopped
+#     command: valkey-server --save 60 1 --loglevel warning
+#     volumes:
+#       - valkey-data:/data
+#     networks:
+#       - traefik
+#
+# volumes:
+#   valkey-data:
 #
 # networks:
 #   traefik:
@@ -213,6 +257,55 @@ http:
 #
 # 4. Traefik will automatically handle SSL certificate generation via
 #    Let's Encrypt for all configured domains
+#
+# IMPORTANT: ACME Challenge Handling
+# - The pages-server middleware automatically detects and passes through
+#   ACME HTTP challenges (/.well-known/acme-challenge/*)
+# - This allows Let's Encrypt to validate custom domains and generate
+#   SSL certificates
+# - You do NOT need to configure special rules for ACME challenges
+# - The middleware handles this automatically before the HTTPS redirect
+
+---
+# ============================================================================
+# TRAEFIK REDIS PROVIDER FOR AUTOMATIC SSL CERTIFICATES
+# ============================================================================
+# The plugin automatically registers custom domains with Traefik's Redis
+# provider, enabling automatic SSL certificate provisioning.
+#
+# How it works:
+# 1. User visits https://username.pages.example.com/repository
+# 2. Plugin detects custom domain in repository's .pages file
+# 3. Plugin writes Traefik router configuration to Redis:
+#    - traefik/http/routers/custom-domain-com/rule = "Host(`domain.com`)"
+#    - traefik/http/routers/custom-domain-com/tls/certResolver = "letsencrypt"
+#    - ... (additional router configuration)
+# 4. Traefik's Redis provider automatically loads the new router
+# 5. Traefik requests SSL certificate from Let's Encrypt
+# 6. Custom domain now has automatic HTTPS!
+#
+# Configuration:
+# - Enable Redis caching in plugin configuration (redisHost, redisPort)
+# - Add Redis provider to Traefik static configuration (see above)
+# - Configure traefikRedisCertResolver to match your cert resolver name
+# - Ensure traefikRedisRootKey matches the rootKey in Redis provider config
+#
+# Redis Keys Created (per custom domain):
+# - traefik/http/routers/custom-{sanitized-domain}/rule
+# - traefik/http/routers/custom-{sanitized-domain}/entryPoints/0
+# - traefik/http/routers/custom-{sanitized-domain}/middlewares/0
+# - traefik/http/routers/custom-{sanitized-domain}/service
+# - traefik/http/routers/custom-{sanitized-domain}/tls/certResolver
+# - traefik/http/routers/custom-{sanitized-domain}/priority
+#
+# TTL:
+# Router configurations expire after traefikRedisRouterTTL seconds (default: 600).
+# Visit the pages URL again to refresh the registration.
+#
+# Disabling:
+# Set traefikRedisRouterEnabled: false to disable automatic router registration.
+# When disabled, the catch-all router (pages-custom-domains-https) should have
+# its tls.certResolver uncommented to handle SSL for custom domains.
 
 ---
 # ============================================================================

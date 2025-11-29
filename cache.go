@@ -421,31 +421,38 @@ func (rc *RedisCache) Get(key string) ([]byte, bool) {
 
 // Set stores a value in Redis cache with TTL.
 func (rc *RedisCache) Set(key string, value []byte) {
+	rc.SetWithTTL(key, value, rc.ttl)
+}
+
+// SetWithTTL stores a value in Redis cache with a specific TTL in seconds.
+// This allows storing values with different TTLs than the cache's default.
+func (rc *RedisCache) SetWithTTL(key string, value []byte, ttlSeconds int) error {
 	conn, err := rc.getConnection()
 	if err != nil {
 		// Fall back to in-memory cache if Redis is unavailable
 		rc.fallback.Set(key, value)
-		return
+		return fmt.Errorf("failed to get Redis connection: %w", err)
 	}
 	defer rc.releaseConnection(conn)
 
 	// Send SETEX command (SET with expiration)
 	// SETEX key seconds value
-	err = rc.sendCommand(conn, "SETEX", key, strconv.Itoa(rc.ttl), string(value))
+	err = rc.sendCommand(conn, "SETEX", key, strconv.Itoa(ttlSeconds), string(value))
 	if err != nil {
 		rc.fallback.Set(key, value)
-		return
+		return fmt.Errorf("failed to send SETEX command: %w", err)
 	}
 
 	// Read response (should be +OK)
 	_, err = rc.readResponse(conn)
 	if err != nil {
 		rc.fallback.Set(key, value)
-		return
+		return fmt.Errorf("failed to read SETEX response: %w", err)
 	}
 
 	// Also update fallback cache for consistency
 	rc.fallback.Set(key, value)
+	return nil
 }
 
 // Delete removes a value from Redis cache.

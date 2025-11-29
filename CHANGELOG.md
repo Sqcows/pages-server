@@ -7,7 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4] - Unreleased
+
+### Fixed
+- **ACME Challenge Passthrough**: Fixed critical bug where middleware was redirecting ACME HTTP challenges to HTTPS
+  - Added automatic detection of `/.well-known/acme-challenge/*` paths in middleware
+  - ACME challenges now pass through to Traefik's handler before HTTPS redirect
+  - Enables Let's Encrypt to validate custom domains and generate SSL certificates
+  - No configuration changes required - works automatically
+- **Router Configuration**: Corrected example Traefik router configurations
+  - Split HTTP (`web`) and HTTPS (`websecure`) routers properly
+  - Removed incorrect pattern where both entrypoints were on same router with TLS
+  - Updated `examples/traefik-config.yml` with correct 3-router pattern:
+    - `pages-https`: HTTPS router for pages domain
+    - `pages-custom-domains-https`: HTTPS router for custom domains
+    - `pages-http`: HTTP router for all domains (handles ACME and redirects)
+
+### Changed
+- **Entry Point Configuration**: Removed automatic HTTP to HTTPS redirect from `entryPoints.web`
+  - Middleware now handles HTTPS redirect (with ACME challenge exceptions)
+  - Prevents redirect loop for ACME challenges
+  - Updated example configurations to reflect this change
+
+### Documentation
+- Added comprehensive "Traefik Redis Provider Integration" section to README.md
+  - Explains how automatic router registration works
+  - Provides complete configuration examples for Traefik static and dynamic config
+  - Documents router registration format and Redis key structure
+  - Lists benefits and fallback behavior
+- Updated configuration reference table with new Traefik Redis provider parameters
+- Added ACME Challenge Handling section to README.md explaining automatic passthrough
+- Added troubleshooting section for SSL certificate generation issues
+- Updated router configuration examples throughout README.md
+- Updated `examples/traefik-config.yml` with detailed comments explaining router structure
+- Added notes about ACME challenge handling to DNS setup documentation
+- Created IMPLEMENTATION_SUMMARY.md documenting the Traefik Redis provider implementation
+
+### Impact
+- **Custom Domains**: SSL certificates now generate correctly for custom domains
+- **Deployment**: Existing deployments must update router configuration to split HTTP/HTTPS
+- **Security**: HTTPS redirect still works for all non-ACME requests
+
 ### Added
+- **Traefik Redis Provider Integration**: Automatic router registration for custom domains
+  - When a custom domain is registered, the plugin writes Traefik router configuration to Redis
+  - Traefik's Redis provider dynamically discovers custom domains and requests SSL certificates
+  - Zero configuration required - works automatically when Redis caching is enabled
+  - New configuration parameters:
+    - `traefikRedisRouterEnabled` (bool, default: true) - Enable/disable router registration
+    - `traefikRedisCertResolver` (string, default: "letsencrypt-http") - Certificate resolver to use
+    - `traefikRedisRouterTTL` (int, default: 600) - TTL for router configurations
+    - `traefikRedisRootKey` (string, default: "traefik") - Redis root key for Traefik config
+  - Automatic sanitization of domain names for valid router names
+  - Graceful fallback: Skips registration when using in-memory cache
+  - Non-blocking error handling: Router registration failures don't affect custom domain functionality
+- `SetWithTTL` method for RedisCache to support custom TTLs per key
+  - Allows storing values with different TTLs than the cache's default
+  - Used for Traefik router configurations with configurable expiration
 - Full Redis client implementation using only Go standard library for Yaegi compatibility
   - Complete RESP (Redis Serialization Protocol) implementation for parsing and encoding
   - Support for GET, SET, SETEX, DEL, FLUSHDB, PING, and AUTH commands
@@ -168,6 +224,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API documentation in code comments
 
 [Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.3...HEAD
+[0.0.4]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.3...v0.0.4
 [0.0.3]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.2...v0.0.3
 [0.0.2]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.1...v0.0.2
 [0.0.1]: https://code.squarecows.com/SquareCows/pages-server/releases/tag/v0.0.1

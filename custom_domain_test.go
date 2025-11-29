@@ -17,6 +17,7 @@ package pages_server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -251,5 +252,296 @@ func TestCustomDomainCacheTTL(t *testing.T) {
 
 	if config.EnableCustomDomains != true {
 		t.Errorf("Expected default EnableCustomDomains to be true, got %v", config.EnableCustomDomains)
+	}
+}
+
+// TestTraefikRouterConfigDefaults tests that Traefik router configuration has correct defaults.
+func TestTraefikRouterConfigDefaults(t *testing.T) {
+	config := CreateConfig()
+
+	if config.TraefikRedisRouterEnabled != true {
+		t.Errorf("Expected default TraefikRedisRouterEnabled to be true, got %v", config.TraefikRedisRouterEnabled)
+	}
+
+	if config.TraefikRedisCertResolver != "letsencrypt-http" {
+		t.Errorf("Expected default TraefikRedisCertResolver to be 'letsencrypt-http', got %q", config.TraefikRedisCertResolver)
+	}
+
+	if config.TraefikRedisRouterTTL != 600 {
+		t.Errorf("Expected default TraefikRedisRouterTTL to be 600, got %d", config.TraefikRedisRouterTTL)
+	}
+
+	if config.TraefikRedisRootKey != "traefik" {
+		t.Errorf("Expected default TraefikRedisRootKey to be 'traefik', got %q", config.TraefikRedisRootKey)
+	}
+}
+
+// TestRegisterTraefikRouterDisabled tests that router registration is skipped when disabled.
+func TestRegisterTraefikRouterDisabled(t *testing.T) {
+	redisCache := NewRedisCache("localhost", 6379, "", 600)
+	defer redisCache.Close()
+
+	ps := &PagesServer{
+		config: &Config{
+			TraefikRedisRouterEnabled: false,
+			TraefikRedisCertResolver:  "letsencrypt-http",
+			TraefikRedisRouterTTL:     600,
+			TraefikRedisRootKey:       "traefik",
+		},
+		customDomainCache: redisCache,
+	}
+
+	// Should return nil without error when disabled
+	err := ps.registerTraefikRouter(context.Background(), "test.example.com")
+	if err != nil {
+		t.Errorf("Expected no error when router registration is disabled, got: %v", err)
+	}
+}
+
+// TestRegisterTraefikRouterWithMemoryCache tests that router registration is skipped with in-memory cache.
+func TestRegisterTraefikRouterWithMemoryCache(t *testing.T) {
+	memoryCache := NewMemoryCache(600)
+	defer memoryCache.Stop()
+
+	ps := &PagesServer{
+		config: &Config{
+			TraefikRedisRouterEnabled: true,
+			TraefikRedisCertResolver:  "letsencrypt-http",
+			TraefikRedisRouterTTL:     600,
+			TraefikRedisRootKey:       "traefik",
+		},
+		customDomainCache: memoryCache,
+	}
+
+	// Should return nil without error when using memory cache
+	err := ps.registerTraefikRouter(context.Background(), "test.example.com")
+	if err != nil {
+		t.Errorf("Expected no error when using memory cache, got: %v", err)
+	}
+}
+
+// TestRegisterTraefikRouterWithRedis tests that router configuration is written to Redis correctly.
+func TestRegisterTraefikRouterWithRedis(t *testing.T) {
+	redisCache := NewRedisCache("localhost", 6379, "", 600)
+	defer redisCache.Close()
+
+	customDomain := "test.example.com"
+	routerName := "custom-test-example-com"
+
+	ps := &PagesServer{
+		config: &Config{
+			TraefikRedisRouterEnabled: true,
+			TraefikRedisCertResolver:  "letsencrypt-http",
+			TraefikRedisRouterTTL:     600,
+			TraefikRedisRootKey:       "traefik",
+		},
+		customDomainCache: redisCache,
+	}
+
+	// Register the router
+	err := ps.registerTraefikRouter(context.Background(), customDomain)
+	if err != nil {
+		t.Fatalf("registerTraefikRouter failed: %v", err)
+	}
+
+	// Verify all router configuration keys were written to Redis
+	expectedConfigs := map[string]string{
+		"traefik/http/routers/" + routerName + "/rule":             "Host(`test.example.com`)",
+		"traefik/http/routers/" + routerName + "/entryPoints/0":    "websecure",
+		"traefik/http/routers/" + routerName + "/middlewares/0":    "pages-server",
+		"traefik/http/routers/" + routerName + "/service":          "pages-noop",
+		"traefik/http/routers/" + routerName + "/tls/certResolver": "letsencrypt-http",
+		"traefik/http/routers/" + routerName + "/priority":         "10",
+	}
+
+	for key, expectedValue := range expectedConfigs {
+		value, found := redisCache.Get(key)
+		if !found {
+			t.Errorf("Expected to find router config key %q in Redis", key)
+			continue
+		}
+
+		if string(value) != expectedValue {
+			t.Errorf("Router config key %q: expected value %q, got %q", key, expectedValue, string(value))
+		}
+	}
+
+	// Clean up
+	for key := range expectedConfigs {
+		redisCache.Delete(key)
+	}
+}
+
+// TestRegisterTraefikRouterSanitizesRouterName tests that router names are properly sanitized.
+func TestRegisterTraefikRouterSanitizesRouterName(t *testing.T) {
+	redisCache := NewRedisCache("localhost", 6379, "", 600)
+	defer redisCache.Close()
+
+	tests := []struct {
+		domain      string
+		routerName  string
+		description string
+	}{
+		{
+			domain:      "example.com",
+			routerName:  "custom-example-com",
+			description: "simple domain",
+		},
+		{
+			domain:      "sub.example.com",
+			routerName:  "custom-sub-example-com",
+			description: "subdomain",
+		},
+		{
+			domain:      "deep.sub.example.com",
+			routerName:  "custom-deep-sub-example-com",
+			description: "deep subdomain",
+		},
+	}
+
+	ps := &PagesServer{
+		config: &Config{
+			TraefikRedisRouterEnabled: true,
+			TraefikRedisCertResolver:  "letsencrypt-http",
+			TraefikRedisRouterTTL:     600,
+			TraefikRedisRootKey:       "traefik",
+		},
+		customDomainCache: redisCache,
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			// Register the router
+			err := ps.registerTraefikRouter(context.Background(), tt.domain)
+			if err != nil {
+				t.Fatalf("registerTraefikRouter failed: %v", err)
+			}
+
+			// Verify the router was created with the sanitized name
+			ruleKey := fmt.Sprintf("traefik/http/routers/%s/rule", tt.routerName)
+			value, found := redisCache.Get(ruleKey)
+			if !found {
+				t.Errorf("Expected to find router config key %q in Redis", ruleKey)
+			}
+
+			expectedRule := fmt.Sprintf("Host(`%s`)", tt.domain)
+			if string(value) != expectedRule {
+				t.Errorf("Expected rule %q, got %q", expectedRule, string(value))
+			}
+
+			// Clean up
+			keysToDelete := []string{
+				fmt.Sprintf("traefik/http/routers/%s/rule", tt.routerName),
+				fmt.Sprintf("traefik/http/routers/%s/entryPoints/0", tt.routerName),
+				fmt.Sprintf("traefik/http/routers/%s/middlewares/0", tt.routerName),
+				fmt.Sprintf("traefik/http/routers/%s/service", tt.routerName),
+				fmt.Sprintf("traefik/http/routers/%s/tls/certResolver", tt.routerName),
+				fmt.Sprintf("traefik/http/routers/%s/priority", tt.routerName),
+			}
+			for _, key := range keysToDelete {
+				redisCache.Delete(key)
+			}
+		})
+	}
+}
+
+// TestRegisterTraefikRouterCustomRootKey tests that custom Redis root keys are respected.
+func TestRegisterTraefikRouterCustomRootKey(t *testing.T) {
+	redisCache := NewRedisCache("localhost", 6379, "", 600)
+	defer redisCache.Close()
+
+	customDomain := "custom-root.example.com"
+	customRootKey := "my-traefik"
+	routerName := "custom-custom-root-example-com"
+
+	ps := &PagesServer{
+		config: &Config{
+			TraefikRedisRouterEnabled: true,
+			TraefikRedisCertResolver:  "letsencrypt-http",
+			TraefikRedisRouterTTL:     600,
+			TraefikRedisRootKey:       customRootKey,
+		},
+		customDomainCache: redisCache,
+	}
+
+	// Register the router
+	err := ps.registerTraefikRouter(context.Background(), customDomain)
+	if err != nil {
+		t.Fatalf("registerTraefikRouter failed: %v", err)
+	}
+
+	// Verify the custom root key was used
+	ruleKey := fmt.Sprintf("%s/http/routers/%s/rule", customRootKey, routerName)
+	value, found := redisCache.Get(ruleKey)
+	if !found {
+		t.Errorf("Expected to find router config key %q with custom root key", ruleKey)
+	}
+
+	expectedRule := fmt.Sprintf("Host(`%s`)", customDomain)
+	if string(value) != expectedRule {
+		t.Errorf("Expected rule %q, got %q", expectedRule, string(value))
+	}
+
+	// Clean up
+	keysToDelete := []string{
+		fmt.Sprintf("%s/http/routers/%s/rule", customRootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/entryPoints/0", customRootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/middlewares/0", customRootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/service", customRootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/tls/certResolver", customRootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/priority", customRootKey, routerName),
+	}
+	for _, key := range keysToDelete {
+		redisCache.Delete(key)
+	}
+}
+
+// TestRegisterTraefikRouterCustomCertResolver tests that custom cert resolvers are used.
+func TestRegisterTraefikRouterCustomCertResolver(t *testing.T) {
+	redisCache := NewRedisCache("localhost", 6379, "", 600)
+	defer redisCache.Close()
+
+	customDomain := "custom-cert.example.com"
+	customCertResolver := "letsencrypt-dns"
+	routerName := "custom-custom-cert-example-com"
+
+	ps := &PagesServer{
+		config: &Config{
+			TraefikRedisRouterEnabled: true,
+			TraefikRedisCertResolver:  customCertResolver,
+			TraefikRedisRouterTTL:     600,
+			TraefikRedisRootKey:       "traefik",
+		},
+		customDomainCache: redisCache,
+	}
+
+	// Register the router
+	err := ps.registerTraefikRouter(context.Background(), customDomain)
+	if err != nil {
+		t.Fatalf("registerTraefikRouter failed: %v", err)
+	}
+
+	// Verify the custom cert resolver was used
+	certResolverKey := fmt.Sprintf("traefik/http/routers/%s/tls/certResolver", routerName)
+	value, found := redisCache.Get(certResolverKey)
+	if !found {
+		t.Errorf("Expected to find cert resolver config key %q", certResolverKey)
+	}
+
+	if string(value) != customCertResolver {
+		t.Errorf("Expected cert resolver %q, got %q", customCertResolver, string(value))
+	}
+
+	// Clean up
+	keysToDelete := []string{
+		fmt.Sprintf("traefik/http/routers/%s/rule", routerName),
+		fmt.Sprintf("traefik/http/routers/%s/entryPoints/0", routerName),
+		fmt.Sprintf("traefik/http/routers/%s/middlewares/0", routerName),
+		fmt.Sprintf("traefik/http/routers/%s/service", routerName),
+		fmt.Sprintf("traefik/http/routers/%s/tls/certResolver", routerName),
+		fmt.Sprintf("traefik/http/routers/%s/priority", routerName),
+	}
+	for _, key := range keysToDelete {
+		redisCache.Delete(key)
 	}
 }

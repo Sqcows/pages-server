@@ -6,7 +6,8 @@ A Traefik middleware plugin that provides static site hosting for Forgejo and Gi
 
 - **Static Site Hosting**: Serve static files from `public/` folders in Forgejo/Gitea repositories
 - **Automatic HTTPS**: Seamless integration with Traefik's Let's Encrypt ACME resolver
-- **HTTP to HTTPS Redirect**: Automatic redirection from HTTP to HTTPS
+- **ACME Challenge Passthrough**: Automatic handling of Let's Encrypt HTTP challenges for SSL certificate generation
+- **HTTP to HTTPS Redirect**: Automatic redirection from HTTP to HTTPS (with ACME challenge exceptions)
 - **Custom Domains**: Support for custom domains with manual DNS configuration
 - **Profile Sites**: Personal pages served from `.profile` repository
 - **Custom Error Pages**: Configurable error pages from a designated repository
@@ -103,27 +104,53 @@ http:
           cacheTTL: 300         # Optional (seconds)
 ```
 
-### 4. Configure Router
+### 4. Configure Routers
 
-Create a router that uses the plugin middleware:
+Create separate HTTP and HTTPS routers that use the plugin middleware:
 
 ```yaml
 http:
   routers:
-    pages:
+    # HTTPS router for pages domain
+    pages-https:
       rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.pages.example.com`)"
+      priority: 10
       entryPoints:
         - websecure
       middlewares:
         - pages-server
-      service: noop@internal  # Plugin handles the response
+      service: noop@internal
       tls:
         certResolver: letsencrypt
         domains:
           - main: "pages.example.com"
             sans:
               - "*.pages.example.com"
+
+    # HTTPS router for custom domains
+    pages-custom-domains-https:
+      rule: "HostRegexp(`{domain:.+}`)"
+      priority: 1
+      entryPoints:
+        - websecure
+      middlewares:
+        - pages-server
+      service: noop@internal
+      tls:
+        certResolver: letsencrypt
+
+    # HTTP router for all domains
+    # Middleware handles ACME challenges and HTTPS redirect
+    pages-http:
+      rule: "HostRegexp(`{domain:.+}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - pages-server
+      service: noop@internal
 ```
+
+**Important**: The routers must be split between HTTP (`web`) and HTTPS (`websecure`) entrypoints. The pages-server middleware automatically handles ACME challenges on the HTTP router before redirecting to HTTPS.
 
 ## Configuration Reference
 
@@ -146,6 +173,10 @@ http:
 | `redisPort` | int | 6379 | Redis server port |
 | `redisPassword` | string | "" | Redis password |
 | `cacheTTL` | int | 300 | Cache time-to-live in seconds |
+| `traefikRedisRouterEnabled` | bool | true | Enable automatic Traefik router registration for custom domains |
+| `traefikRedisCertResolver` | string | "letsencrypt-http" | Certificate resolver to use for dynamically registered custom domains |
+| `traefikRedisRouterTTL` | int | 600 | TTL for Traefik router configurations in seconds |
+| `traefikRedisRootKey` | string | "traefik" | Redis root key for Traefik configuration |
 
 ## Custom Domains
 
@@ -181,12 +212,13 @@ The plugin uses a registration-based approach for custom domains:
    - Create an A record pointing `www.example.com` to your Traefik server's IP address
    - Or create a CNAME record pointing to your Traefik server's hostname
 
-3. **Configure Traefik router to handle custom domains**:
+3. **Configure Traefik routers to handle custom domains**:
    ```yaml
    http:
      routers:
-       pages-custom-domains:
-         rule: "HostRegexp(`{domain:.+}`)"  # Matches all domains
+       # HTTPS router for custom domains
+       pages-custom-domains-https:
+         rule: "HostRegexp(`{domain:.+}`)"
          priority: 1  # Lower priority than pages domain router
          entryPoints:
            - websecure
@@ -195,6 +227,15 @@ The plugin uses a registration-based approach for custom domains:
          service: noop@internal
          tls:
            certResolver: letsencrypt  # Auto-provision SSL certificates
+
+       # HTTP router (handles ACME challenges and redirects)
+       pages-http:
+         rule: "HostRegexp(`{domain:.+}`)"
+         entryPoints:
+           - web
+         middlewares:
+           - pages-server
+         service: noop@internal
    ```
 
 4. **Activate your custom domain**:
@@ -263,11 +304,32 @@ The plugin includes several performance optimizations:
 - **Efficient file serving**: Direct content serving without disk I/O
 - **Target response time**: <5ms with caching enabled
 
+## ACME Challenge Handling
+
+The plugin automatically handles Let's Encrypt ACME HTTP challenges for SSL certificate generation:
+
+1. **Automatic Detection**: Detects requests to `/.well-known/acme-challenge/*` paths
+2. **Passthrough**: Passes ACME challenges to Traefik's handler before HTTPS redirect
+3. **Zero Configuration**: No special router rules or configuration needed
+4. **Custom Domain Support**: Enables SSL certificate generation for custom domains
+
+### How It Works
+
+When Let's Encrypt validates a domain for SSL certificate generation:
+
+1. Let's Encrypt sends an HTTP request to `http://your-domain/.well-known/acme-challenge/token`
+2. The pages-server middleware detects the ACME challenge path
+3. The middleware passes the request to Traefik's `next` handler (bypassing HTTPS redirect)
+4. Traefik responds with the ACME challenge response
+5. Let's Encrypt validates the response and generates the SSL certificate
+
+This happens automatically without any special configuration or manual intervention.
+
 ## Security
 
 - **Public repositories only**: By default, only public repositories are accessible
 - **Private repository support**: Use `forgejoToken` for authenticated access
-- **HTTPS enforcement**: Automatic HTTP to HTTPS redirection
+- **HTTPS enforcement**: Automatic HTTP to HTTPS redirection (with ACME challenge exceptions)
 - **Input validation**: Request parsing with validation
 - **No code execution**: Serves static files only
 
@@ -344,6 +406,122 @@ http:
 
 See [REDIS_TESTING.md](REDIS_TESTING.md) for comprehensive testing instructions and manual integration tests.
 
+## Traefik Redis Provider Integration
+
+When using Redis caching, the plugin can automatically register custom domains with Traefik's Redis provider. This enables Traefik to dynamically discover custom domains and automatically request SSL certificates without manual router configuration.
+
+### How It Works
+
+When a custom domain is registered (by visiting the pages URL):
+
+1. **Domain Mapping**: The plugin caches the custom domain → repository mapping (existing behavior)
+2. **Router Registration**: The plugin writes Traefik router configuration to Redis
+3. **Traefik Discovery**: Traefik's Redis provider reads the router configuration
+4. **SSL Certificate**: Traefik automatically requests an SSL certificate for the custom domain
+5. **Automatic Routing**: Requests to the custom domain are routed through the pages-server middleware
+
+### Configuration
+
+#### 1. Configure Traefik Static Configuration
+
+Enable Traefik's Redis provider in your static configuration:
+
+```yaml
+providers:
+  redis:
+    endpoints:
+      - "valkey:6379"  # Or "localhost:6379"
+    rootKey: "traefik"
+    # username: ""     # Optional
+    # password: ""     # Optional
+
+certificatesResolvers:
+  letsencrypt-http:
+    acme:
+      email: admin@example.com
+      storage: acme.json
+      httpChallenge:
+        entryPoint: web
+```
+
+#### 2. Configure Plugin Middleware
+
+```yaml
+http:
+  middlewares:
+    pages-server:
+      plugin:
+        pages-server:
+          pagesDomain: pages.example.com
+          forgejoHost: https://git.example.com
+          redisHost: valkey  # Enable Redis caching
+          redisPort: 6379
+          # Traefik Redis provider settings (all optional)
+          traefikRedisRouterEnabled: true  # Default: true
+          traefikRedisCertResolver: letsencrypt-http  # Default: letsencrypt-http
+          traefikRedisRouterTTL: 600  # Default: 600 seconds
+          traefikRedisRootKey: traefik  # Default: traefik
+```
+
+#### 3. Configure a Noop Service
+
+The dynamically registered routers need a service to route to. Create a noop service:
+
+```yaml
+http:
+  services:
+    pages-noop:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:1"  # Unused - middleware intercepts all requests
+```
+
+### Router Registration Format
+
+For each custom domain, the plugin writes the following keys to Redis:
+
+```
+traefik/http/routers/custom-{domain}/rule = "Host(`example.com`)"
+traefik/http/routers/custom-{domain}/entryPoints/0 = "websecure"
+traefik/http/routers/custom-{domain}/middlewares/0 = "pages-server"
+traefik/http/routers/custom-{domain}/service = "pages-noop"
+traefik/http/routers/custom-{domain}/tls/certResolver = "letsencrypt-http"
+traefik/http/routers/custom-{domain}/priority = "10"
+```
+
+Where `{domain}` is the custom domain with dots replaced by dashes (e.g., `example-com`).
+
+### Benefits
+
+- **Zero Configuration**: No manual router creation for each custom domain
+- **Automatic SSL**: Traefik automatically requests SSL certificates for custom domains
+- **Dynamic Discovery**: Traefik discovers new custom domains automatically
+- **TTL Management**: Router configurations expire after TTL (refreshed on each visit)
+- **Scalable**: Works with unlimited custom domains without configuration changes
+
+### Disabling Router Registration
+
+If you prefer to manually configure routers or don't use Traefik's Redis provider:
+
+```yaml
+http:
+  middlewares:
+    pages-server:
+      plugin:
+        pages-server:
+          pagesDomain: pages.example.com
+          forgejoHost: https://git.example.com
+          redisHost: localhost
+          traefikRedisRouterEnabled: false  # Disable automatic router registration
+```
+
+### Fallback Behavior
+
+- **No Redis**: If `redisHost` is not configured, router registration is automatically skipped
+- **In-Memory Cache**: If using in-memory cache, router registration is automatically skipped
+- **Disabled**: If `traefikRedisRouterEnabled` is false, router registration is skipped
+- **Error Handling**: If router registration fails, an error is logged but the request continues normally
+
 ## Limitations
 
 - The plugin runs in Traefik's Yaegi interpreter, which has some limitations compared to compiled Go
@@ -406,6 +584,26 @@ error-pages/
 7. Check that `enableCustomDomains` is set to `true` (default)
 8. Verify the router priority is set correctly (custom domain router should have lower priority than pages domain router)
 9. If you see "Custom domain not registered", visit the pages URL first to activate it
+
+### SSL certificate not generating for custom domain
+
+1. **Check router configuration**: Ensure HTTP and HTTPS routers are split correctly
+   - HTTP router should use `web` entrypoint only
+   - HTTPS router should use `websecure` entrypoint only
+   - Do NOT configure both entrypoints on the same router
+2. **Verify ACME challenge passthrough**: The middleware automatically handles ACME challenges
+   - Check Traefik logs for ACME challenge requests
+   - Verify requests to `/.well-known/acme-challenge/*` are reaching Traefik
+3. **Check Traefik static configuration**:
+   - Remove automatic HTTP to HTTPS redirect from `entryPoints.web` configuration
+   - The middleware handles HTTPS redirect (with ACME exceptions)
+4. **Verify DNS configuration**:
+   - Ensure DNS A record points to your Traefik server
+   - Wait for DNS propagation (can take up to 48 hours)
+5. **Check certificate resolver**:
+   - Verify `certificatesResolvers.letsencrypt` is configured in static config
+   - Check Let's Encrypt rate limits (max 50 certificates per domain per week)
+   - Review Traefik logs for certificate generation errors
 
 ### Performance issues
 

@@ -56,15 +56,31 @@ type Config struct {
 
 	// CustomDomainCacheTTL is the cache TTL for custom domain lookups in seconds (default: 600)
 	CustomDomainCacheTTL int `json:"customDomainCacheTTL,omitempty"`
+
+	// TraefikRedisRouterEnabled enables automatic Traefik router registration for custom domains (default: true)
+	TraefikRedisRouterEnabled bool `json:"traefikRedisRouterEnabled,omitempty"`
+
+	// TraefikRedisCertResolver specifies which Traefik certificate resolver to use (default: "letsencrypt-http")
+	TraefikRedisCertResolver string `json:"traefikRedisCertResolver,omitempty"`
+
+	// TraefikRedisRouterTTL is the TTL for Traefik router configurations in seconds (default: same as CustomDomainCacheTTL)
+	TraefikRedisRouterTTL int `json:"traefikRedisRouterTTL,omitempty"`
+
+	// TraefikRedisRootKey is the Redis root key for Traefik configuration (default: "traefik")
+	TraefikRedisRootKey string `json:"traefikRedisRootKey,omitempty"`
 }
 
 // CreateConfig creates and initializes the plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
-		EnableCustomDomains:  true,
-		RedisPort:            6379,
-		CacheTTL:             300,
-		CustomDomainCacheTTL: 600,
+		EnableCustomDomains:       true,
+		RedisPort:                 6379,
+		CacheTTL:                  300,
+		CustomDomainCacheTTL:      600,
+		TraefikRedisRouterEnabled: true,
+		TraefikRedisCertResolver:  "letsencrypt-http",
+		TraefikRedisRouterTTL:     600,
+		TraefikRedisRootKey:       "traefik",
 	}
 }
 
@@ -322,7 +338,54 @@ func (ps *PagesServer) registerCustomDomain(ctx context.Context, username, repos
 		cacheKey := "custom_domain:" + pagesConfig.CustomDomain
 		cacheValue := username + ":" + repository
 		ps.customDomainCache.Set(cacheKey, []byte(cacheValue))
+
+		// Register Traefik router for automatic SSL certificate generation
+		if err := ps.registerTraefikRouter(ctx, pagesConfig.CustomDomain); err != nil {
+			// Log error but don't fail the request
+			// The custom domain will still work, just won't get automatic SSL until next visit
+			fmt.Printf("Warning: failed to register Traefik router for %s: %v\n", pagesConfig.CustomDomain, err)
+		}
 	}
+}
+
+// registerTraefikRouter writes Traefik router configuration to Redis for automatic SSL certificate generation.
+// This enables Traefik's Redis provider to dynamically discover custom domains and request certificates.
+func (ps *PagesServer) registerTraefikRouter(ctx context.Context, customDomain string) error {
+	if !ps.config.TraefikRedisRouterEnabled {
+		return nil
+	}
+
+	// Only write if we have a working Redis cache
+	redisCache, ok := ps.customDomainCache.(*RedisCache)
+	if !ok {
+		// Using in-memory cache, skip Traefik router registration
+		return nil
+	}
+
+	// Create sanitized router name (replace dots with dashes for valid router names)
+	routerName := "custom-" + strings.ReplaceAll(customDomain, ".", "-")
+	rootKey := ps.config.TraefikRedisRootKey
+
+	// Write router configuration keys to Redis
+	// Each configuration line becomes a separate Redis key
+	// This format is expected by Traefik's Redis provider
+	configs := map[string]string{
+		fmt.Sprintf("%s/http/routers/%s/rule", rootKey, routerName):             fmt.Sprintf("Host(`%s`)", customDomain),
+		fmt.Sprintf("%s/http/routers/%s/entryPoints/0", rootKey, routerName):    "websecure",
+		fmt.Sprintf("%s/http/routers/%s/middlewares/0", rootKey, routerName):    "pages-server",
+		fmt.Sprintf("%s/http/routers/%s/service", rootKey, routerName):          "pages-noop",
+		fmt.Sprintf("%s/http/routers/%s/tls/certResolver", rootKey, routerName): ps.config.TraefikRedisCertResolver,
+		fmt.Sprintf("%s/http/routers/%s/priority", rootKey, routerName):         "10",
+	}
+
+	// Write each config key with TTL
+	for key, value := range configs {
+		if err := redisCache.SetWithTTL(key, []byte(value), ps.config.TraefikRedisRouterTTL); err != nil {
+			return fmt.Errorf("failed to write Traefik router config key %s: %w", key, err)
+		}
+	}
+
+	return nil
 }
 
 // parseCustomDomainPath parses the URL path for a custom domain request.
