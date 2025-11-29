@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.4] - Unreleased
+## [0.0.4] - 2025-11-29
 
 ### Fixed
 - **ACME Challenge Passthrough**: Fixed critical bug where middleware was redirecting ACME HTTP challenges to HTTPS
@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `pages-https`: HTTPS router for pages domain
     - `pages-custom-domains-https`: HTTPS router for custom domains
     - `pages-http`: HTTP router for all domains (handles ACME and redirects)
+- **Redis Router Registration**: Fixed service and middleware references for dynamically created routers
+  - Changed service reference from `pages-noop` to `noop@internal` (Traefik's built-in service)
+  - Changed middleware reference from `pages-server` to `pages-server@file` (fully qualified name)
+  - Eliminates "service does not exist" and "middleware does not exist" errors in Traefik dashboard
+  - No external service configuration required - uses Traefik's internal noop service
 
 ### Changed
 - **Entry Point Configuration**: Removed automatic HTTP to HTTPS redirect from `entryPoints.web`
