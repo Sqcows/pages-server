@@ -127,7 +127,8 @@ http:
             sans:
               - "*.pages.example.com"
 
-    # HTTPS router for custom domains
+    # HTTPS router for custom domains (catch-all)
+    # Individual domains get their own routers dynamically created in Redis
     pages-custom-domains-https:
       rule: "HostRegexp(`{domain:.+}`)"
       priority: 1
@@ -136,8 +137,7 @@ http:
       middlewares:
         - pages-server
       service: noop@internal
-      tls:
-        certResolver: letsencrypt
+      # No TLS certResolver - individual routers in Redis handle SSL certificates
 
     # HTTP router for all domains
     # Middleware handles ACME challenges and HTTPS redirect
@@ -212,11 +212,21 @@ The plugin uses a registration-based approach for custom domains:
    - Create an A record pointing `www.example.com` to your Traefik server's IP address
    - Or create a CNAME record pointing to your Traefik server's hostname
 
-3. **Configure Traefik routers to handle custom domains**:
+3. **Configure Traefik static config with Redis provider** (see [Traefik Redis Provider Integration](#traefik-redis-provider-integration)):
+   ```yaml
+   providers:
+     redis:
+       endpoints:
+         - "localhost:6379"
+       rootKey: "traefik"
+   ```
+
+4. **Configure Traefik routers to handle custom domains**:
    ```yaml
    http:
      routers:
-       # HTTPS router for custom domains
+       # HTTPS router for custom domains (catch-all)
+       # Individual domains get their own routers dynamically created in Redis
        pages-custom-domains-https:
          rule: "HostRegexp(`{domain:.+}`)"
          priority: 1  # Lower priority than pages domain router
@@ -225,8 +235,7 @@ The plugin uses a registration-based approach for custom domains:
          middlewares:
            - pages-server
          service: noop@internal
-         tls:
-           certResolver: letsencrypt  # Auto-provision SSL certificates
+         # No TLS certResolver - individual routers in Redis handle SSL certificates
 
        # HTTP router (handles ACME challenges and redirects)
        pages-http:
@@ -238,13 +247,15 @@ The plugin uses a registration-based approach for custom domains:
          service: noop@internal
    ```
 
-4. **Activate your custom domain**:
+5. **Activate your custom domain**:
    - Visit `https://username.pages.example.com/repository` to register the custom domain
-   - This reads your `.pages` file and caches the custom domain mapping
-   - Your custom domain is now active
+   - The plugin reads your `.pages` file and writes a Traefik router configuration to Redis
+   - Traefik's Redis provider automatically loads the router and requests an SSL certificate
+   - Your custom domain is now active with automatic HTTPS
 
-5. **Traefik automatically handles SSL certificates**:
-   - Requests SSL certificates via Let's Encrypt for custom domains
+6. **Traefik automatically handles SSL certificates**:
+   - Plugin creates individual routers in Redis for each custom domain
+   - Traefik requests SSL certificates via Let's Encrypt automatically
    - Serves your site with HTTPS
    - Handles certificate renewal
 
