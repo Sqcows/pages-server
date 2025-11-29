@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Serves static files from `public/` folders in Forgejo/Gitea repositories
 - Automatic HTTPS via Traefik's certificatesResolvers with HTTP→HTTPS redirect
-- Custom domain support with manual DNS configuration (SSL certificates managed by Traefik)
+- Custom domain support with registration-based activation and manual DNS configuration (SSL certificates managed by Traefik)
 - URL format: `$git_username.$configured_domain/$repository`
 - Profile sites at `$git_username.$configured_domain/` (from `.profile` directory)
 - Only serves repositories with both `public/` folder and `.pages` file
@@ -44,7 +44,7 @@ The plugin is configured via Traefik's YAML configuration with the following par
 - Redis caching configuration
 
 **Custom Domain Configuration:**
-Custom domains are specified in the `.pages` file within each repository. Users must manually create DNS records (A or CNAME) pointing to the Traefik server IP address.
+Custom domains are specified in the `.pages` file within each repository. Custom domains must be activated by visiting the pages URL (e.g., `https://username.pages.domain.com/repository`) to register the domain mapping in cache. Users must manually create DNS records (A or CNAME) pointing to the Traefik server IP address.
 
 **SSL Certificate Configuration:**
 SSL certificates are managed by Traefik's `certificatesResolvers` configuration, not by the plugin.
@@ -77,7 +77,7 @@ This project is licensed under the GNU General Public License v3.0 (GPLv3). All 
 ## Development
 
 ### Version
-Current version: v0.0.2
+Current version: v0.0.3
 
 ### Repository
 https://code.squarecows.com/SquareCows/pages-server

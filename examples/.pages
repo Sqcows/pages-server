@@ -7,11 +7,18 @@
 enabled: true
 
 # Optional: Specify a custom domain for this site
-# The plugin will automatically create DNS records and SSL certificates
+# When specified, your site will be accessible at this domain instead of
+# (or in addition to) the default username.pages.example.com/repository URL
+#
+# IMPORTANT: You must manually configure DNS with your DNS provider:
+# 1. Create an A record pointing the custom domain to your Traefik server's IP
+#    OR create a CNAME record pointing to your Traefik server's hostname
+# 2. Traefik will automatically provision SSL certificates via Let's Encrypt
+# 3. Allow up to 48 hours for DNS propagation
+#
+# Examples:
 # custom_domain: www.example.com
-
-# Note: You can also use subdomain
 # custom_domain: blog.example.com
-
-# Multiple custom domains are not currently supported
-# Use one .pages file per repository
+# custom_domain: docs.mycompany.org
+#
+# Note: Only one custom domain per repository is supported

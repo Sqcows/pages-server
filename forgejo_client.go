@@ -312,3 +312,4 @@ func base64Decode(dst, src []byte) (int, error) {
 func base64DecodedLen(n int) int {
 	return (n * 3) / 4
 }
+

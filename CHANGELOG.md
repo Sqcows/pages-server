@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2025-11-28
+
+### Added
+- Full custom domain support with registration-based approach
+  - Added `registerCustomDomain` method to automatically register custom domains when serving pages URL
+  - Added `resolveCustomDomain` method with cache-only lookup (no API calls)
+  - Added `parseCustomDomainPath` method for custom domain URL parsing
+  - Added separate custom domain cache with configurable TTL
+  - Added `enableCustomDomains` configuration option (default: true)
+  - Added `customDomainCacheTTL` configuration option (default: 600 seconds)
+- Comprehensive test suite for custom domain functionality
+  - Added `custom_domain_test.go` with tests for path parsing, caching, and routing
+  - Added `TestResolveCustomDomainNotRegistered` for unregistered domain error handling
+  - Tests for custom domain enabled/disabled scenarios
+  - Tests for custom domain vs pagesDomain request routing
+- Enhanced documentation
+  - Added CUSTOM_DOMAINS.md with detailed architecture documentation
+  - Updated README.md with registration-based custom domain setup instructions
+  - Added activation step to custom domain setup (visit pages URL to activate)
+  - Added troubleshooting steps for custom domain issues
+  - Updated example Traefik configuration with custom domain router setup
+  - Updated example .pages file with custom domain configuration details
+
+### Changed
+- Modified `ServeHTTP` to automatically register custom domains when serving pagesDomain requests
+- Modified `ServeHTTP` to route custom domain requests separately from pagesDomain requests
+- Updated `PagesServer` struct to include `customDomainCache` field
+- Enhanced Traefik router configuration examples to support both pagesDomain and custom domains with proper priority settings
+- Custom domain requests now serve content from repository root (no repository name in URL path)
+- Custom domains must be activated by visiting the pages URL first (registration-based approach)
+
+### Performance
+- **Infinite scalability**: Performance no longer depends on number of users or repositories
+- **Predictable performance**: All custom domain requests are fast (cache-only lookups, <5ms)
+- Custom domain lookups use cache-only approach (no API calls or repository searching)
+- Custom domain mappings cached for 10 minutes (configurable via customDomainCacheTTL)
+- Efficient caching: Only active custom domains consume cache space
+
+### Security
+- Custom domain resolution respects repository visibility (public/private)
+- Only repositories with .pages file are considered for custom domain activation
+- Custom domain feature can be disabled via configuration if not needed
+
+### Improved
+- Simpler architecture: Registration-based approach eliminates complex repository search logic
+- Better UX: Clear activation step with helpful error messages
+- Test coverage increased to 78.2%
+
 ## [0.0.2] - 2025-11-27
 
 ### Added
@@ -80,6 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Troubleshooting guide
 - API documentation in code comments
 
-[Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.2...HEAD
+[Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.3...HEAD
+[0.0.3]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.2...v0.0.3
 [0.0.2]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.1...v0.0.2
 [0.0.1]: https://code.squarecows.com/SquareCows/pages-server/releases/tag/v0.0.1

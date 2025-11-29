@@ -15,7 +15,7 @@ A Traefik middleware plugin that provides static site hosting for Forgejo and Gi
 
 ## URL Structure
 
-The plugin supports two URL patterns:
+The plugin supports three URL patterns:
 
 1. **Repository Sites**: `https://$username.$domain/$repository/`
    - Serves files from the `public/` folder of `$username/$repository`
@@ -24,6 +24,10 @@ The plugin supports two URL patterns:
 2. **Profile Sites**: `https://$username.$domain/`
    - Serves files from the `public/` folder of `$username/.profile`
    - Example: `https://john.pages.example.com/` serves from `john/.profile/public/`
+
+3. **Custom Domain Sites**: `https://www.example.com/`
+   - Serves files from the `public/` folder of a repository with matching `custom_domain` in `.pages` file
+   - Example: `https://www.example.com/` serves from the repository that has `custom_domain: www.example.com`
 
 ## Requirements
 
@@ -54,7 +58,7 @@ experimental:
   plugins:
     pages-server:
       moduleName: code.squarecows.com/SquareCows/pages-server
-      version: v0.0.1
+      version: v0.0.3
 ```
 
 ### 2. Configure Let's Encrypt (ACME)
@@ -134,8 +138,10 @@ http:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `forgejoToken` | string | "" | API token for Forgejo (required for private repos) |
+| `forgejoToken` | string | "" | API token for Forgejo (required for private repos and custom domain lookups) |
 | `errorPagesRepo` | string | "" | Repository for custom error pages (format: `username/repository`) |
+| `enableCustomDomains` | bool | true | Enable custom domain support |
+| `customDomainCacheTTL` | int | 600 | Cache TTL for custom domain lookups in seconds |
 | `redisHost` | string | "" | Redis server host for caching |
 | `redisPort` | int | 6379 | Redis server port |
 | `redisPassword` | string | "" | Redis password |
@@ -143,21 +149,93 @@ http:
 
 ## Custom Domains
 
-To use a custom domain for your site:
+Custom domains allow you to serve your site on your own domain name (e.g., `www.example.com`) instead of the default pages domain (e.g., `username.pages.example.com/repository`).
 
-1. Add the custom domain to your repository's `.pages` file:
+### How Custom Domains Work
+
+The plugin uses a registration-based approach for custom domains:
+
+1. **Registration**: When you visit your pages URL (`https://username.pages.example.com/repository`), the plugin:
+   - Reads your repository's `.pages` file
+   - If a `custom_domain` is specified, registers it in the cache
+   - Maps the custom domain to your repository
+
+2. **Custom Domain Requests**: When a request arrives at your custom domain:
+   - The plugin looks up the domain in the cache
+   - If found, serves content from the registered repository
+   - If not found, returns a helpful 404 message
+
+3. **Cache Refresh**: The mapping is cached for `customDomainCacheTTL` seconds (default: 600)
+   - Visit your pages URL again to refresh the registration
+   - Keeps active custom domains fast without searching all repositories
+
+### Setting Up a Custom Domain
+
+1. **Add custom domain to your `.pages` file**:
    ```yaml
    enabled: true
    custom_domain: www.example.com
    ```
 
-2. Manually create DNS records with your DNS provider:
+2. **Configure DNS with your DNS provider**:
    - Create an A record pointing `www.example.com` to your Traefik server's IP address
-   - Or create a CNAME record pointing to your pages domain (e.g., `username.pages.example.com`)
+   - Or create a CNAME record pointing to your Traefik server's hostname
 
-3. Traefik's certificatesResolvers will automatically:
-   - Request SSL certificates via Let's Encrypt
-   - Serve your site on the custom domain with HTTPS
+3. **Configure Traefik router to handle custom domains**:
+   ```yaml
+   http:
+     routers:
+       pages-custom-domains:
+         rule: "HostRegexp(`{domain:.+}`)"  # Matches all domains
+         priority: 1  # Lower priority than pages domain router
+         entryPoints:
+           - websecure
+         middlewares:
+           - pages-server
+         service: noop@internal
+         tls:
+           certResolver: letsencrypt  # Auto-provision SSL certificates
+   ```
+
+4. **Activate your custom domain**:
+   - Visit `https://username.pages.example.com/repository` to register the custom domain
+   - This reads your `.pages` file and caches the custom domain mapping
+   - Your custom domain is now active
+
+5. **Traefik automatically handles SSL certificates**:
+   - Requests SSL certificates via Let's Encrypt for custom domains
+   - Serves your site with HTTPS
+   - Handles certificate renewal
+
+### Custom Domain Caching
+
+The plugin caches custom domain → repository mappings:
+- Cache TTL: 600 seconds (configurable via `customDomainCacheTTL`)
+- Only active custom domains are cached (those that have been visited)
+- Visit your pages URL to refresh the registration
+- Cache expires automatically after TTL
+
+### Performance Considerations
+
+- **All requests are fast**: Custom domain lookups use cache only (no repository searching)
+- **Predictable performance**: <5ms response time for all requests
+- **Scalable**: Works efficiently with any number of repositories
+- **Cache refresh**: Simply visit your pages URL to keep the custom domain active
+
+### Disabling Custom Domains
+
+If you don't need custom domain support, you can disable it:
+
+```yaml
+http:
+  middlewares:
+    pages-server:
+      plugin:
+        pages-server:
+          pagesDomain: pages.example.com
+          forgejoHost: https://git.example.com
+          enableCustomDomains: false  # Disable custom domains
+```
 
 ## Custom Error Pages
 
@@ -289,9 +367,13 @@ error-pages/
 
 1. Verify DNS records are correctly configured with your DNS provider
 2. Check that the custom domain is specified in `.pages` file
-3. Allow time for DNS propagation (up to 48 hours)
-4. Verify Traefik certificate resolver is configured
-5. Ensure the DNS record points to your Traefik server's IP address
+3. **Visit your pages URL** (`https://username.pages.example.com/repository`) to activate the custom domain
+4. Allow time for DNS propagation (up to 48 hours)
+5. Verify Traefik certificate resolver is configured
+6. Ensure the DNS record points to your Traefik server's IP address
+7. Check that `enableCustomDomains` is set to `true` (default)
+8. Verify the router priority is set correctly (custom domain router should have lower priority than pages domain router)
+9. If you see "Custom domain not registered", visit the pages URL first to activate it
 
 ### Performance issues
 

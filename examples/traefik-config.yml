@@ -101,24 +101,24 @@ http:
           # Optional: Custom error pages repository
           errorPagesRepo: system/error-pages
 
+          # Optional: Custom domain settings
+          enableCustomDomains: true  # Default: true
+          customDomainCacheTTL: 600  # Cache TTL for custom domain registrations (seconds)
+                                      # Custom domains must be activated by visiting the
+                                      # pages URL: https://username.pages.example.com/repository
+
           # Optional: Redis caching (leave empty to use in-memory cache)
           # redisHost: localhost
           # redisPort: 6379
           # redisPassword: ""
           # cacheTTL: 300
 
-  # Define the router for pages
+  # Define the routers for pages
   routers:
-    pages-http:
+    # Router for pages domain (e.g., *.pages.example.com)
+    pages-domain:
       rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.pages.example.com`)"
-      entryPoints:
-        - web
-      service: noop@internal
-      middlewares:
-        - pages-server
-
-    pages-https:
-      rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.pages.example.com`)"
+      priority: 10  # Higher priority than custom domain router
       entryPoints:
         - websecure
       service: noop@internal
@@ -130,6 +130,28 @@ http:
           - main: "pages.example.com"
             sans:
               - "*.pages.example.com"
+
+    # Router for custom domains
+    # This catches all domains not matched by pages-domain router
+    pages-custom-domains:
+      rule: "HostRegexp(`{domain:.+}`)"
+      priority: 1  # Lower priority - catches all other domains
+      entryPoints:
+        - websecure
+      service: noop@internal
+      middlewares:
+        - pages-server
+      tls:
+        certResolver: letsencrypt  # Auto-provision SSL for custom domains
+
+    # HTTP to HTTPS redirect for all domains
+    pages-http-redirect:
+      rule: "HostRegexp(`{domain:.+}`)"
+      entryPoints:
+        - web
+      service: noop@internal
+      middlewares:
+        - pages-server
 
 ---
 # ============================================================================
@@ -183,7 +205,13 @@ http:
 #    - Name: www.example.com
 #    - Value: username.pages.example.com
 #
-# 3. Traefik will automatically handle SSL certificate generation via
+# 3. Activate your custom domain:
+#    - Visit https://username.pages.example.com/repository
+#    - This registers the custom domain from your .pages file
+#    - Custom domain is now active for 600 seconds (configurable)
+#    - Visit pages URL again to refresh the registration
+#
+# 4. Traefik will automatically handle SSL certificate generation via
 #    Let's Encrypt for all configured domains
 
 ---

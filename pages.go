@@ -39,6 +39,9 @@ type Config struct {
 	// ErrorPagesRepo is the repository containing custom error pages (format: username/repository)
 	ErrorPagesRepo string `json:"errorPagesRepo,omitempty"`
 
+	// EnableCustomDomains enables custom domain support (default: true)
+	EnableCustomDomains bool `json:"enableCustomDomains,omitempty"`
+
 	// RedisHost is the Redis server host for caching (optional)
 	RedisHost string `json:"redisHost,omitempty"`
 
@@ -50,25 +53,37 @@ type Config struct {
 
 	// CacheTTL is the cache time-to-live in seconds (default: 300)
 	CacheTTL int `json:"cacheTTL,omitempty"`
+
+	// CustomDomainCacheTTL is the cache TTL for custom domain lookups in seconds (default: 600)
+	CustomDomainCacheTTL int `json:"customDomainCacheTTL,omitempty"`
 }
 
 // CreateConfig creates and initializes the plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
-		RedisPort: 6379,
-		CacheTTL:  300,
+		EnableCustomDomains:  true,
+		RedisPort:            6379,
+		CacheTTL:             300,
+		CustomDomainCacheTTL: 600,
 	}
 }
 
 // PagesServer is the main plugin structure.
 type PagesServer struct {
-	next          http.Handler
-	name          string
-	config        *Config
-	forgejoClient *ForgejoClient
-	cache         Cache
-	mu            sync.RWMutex
-	errorPages    map[int][]byte
+	next              http.Handler
+	name              string
+	config            *Config
+	forgejoClient     *ForgejoClient
+	cache             Cache
+	customDomainCache Cache // Cache for custom domain -> (username/repo) mappings
+	mu                sync.RWMutex
+	errorPages        map[int][]byte
+}
+
+// customDomainMapping represents a mapping from a custom domain to a repository.
+type customDomainMapping struct {
+	Username   string
+	Repository string
 }
 
 // New creates a new instance of the PagesServer plugin.
@@ -92,13 +107,22 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		cache = NewMemoryCache(config.CacheTTL)
 	}
 
+	// Initialize custom domain cache with separate TTL
+	var customDomainCache Cache
+	if config.RedisHost != "" {
+		customDomainCache = NewRedisCache(config.RedisHost, config.RedisPort, config.RedisPassword, config.CustomDomainCacheTTL)
+	} else {
+		customDomainCache = NewMemoryCache(config.CustomDomainCacheTTL)
+	}
+
 	ps := &PagesServer{
-		next:          next,
-		name:          name,
-		config:        config,
-		forgejoClient: forgejoClient,
-		cache:         cache,
-		errorPages:    make(map[int][]byte),
+		next:              next,
+		name:              name,
+		config:            config,
+		forgejoClient:     forgejoClient,
+		cache:             cache,
+		customDomainCache: customDomainCache,
+		errorPages:        make(map[int][]byte),
 	}
 
 	// Load error pages if configured
@@ -125,10 +149,35 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Parse the request to determine username, repository, and file path
-	username, repository, filePath, err := ps.parseRequest(req)
-	if err != nil {
-		ps.serveError(rw, http.StatusBadRequest, "Invalid request format")
+	// Determine if this is a custom domain request or a pagesDomain request
+	host := req.Host
+	if colonIdx := strings.Index(host, ":"); colonIdx != -1 {
+		host = host[:colonIdx]
+	}
+
+	var username, repository, filePath string
+	var err error
+
+	// Check if this is a pagesDomain request
+	if strings.HasSuffix(host, ps.config.PagesDomain) {
+		// Parse as standard pagesDomain request
+		username, repository, filePath, err = ps.parseRequest(req)
+		if err != nil {
+			ps.serveError(rw, http.StatusBadRequest, "Invalid request format")
+			return
+		}
+	} else if ps.config.EnableCustomDomains {
+		// This might be a custom domain request
+		username, repository, err = ps.resolveCustomDomain(req.Context(), host)
+		if err != nil {
+			ps.serveError(rw, http.StatusNotFound, "Custom domain not configured")
+			return
+		}
+		// Parse file path from URL (custom domains serve from repository root)
+		filePath = ps.parseCustomDomainPath(req.URL.Path)
+	} else {
+		// Custom domains disabled and not a pagesDomain request
+		ps.serveError(rw, http.StatusBadRequest, "Invalid domain")
 		return
 	}
 
@@ -155,6 +204,11 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// Cache the content
 	ps.cache.Set(cacheKey, content)
+
+	// If this is a pagesDomain request, check for custom domain registration
+	if strings.HasSuffix(host, ps.config.PagesDomain) {
+		ps.registerCustomDomain(req.Context(), username, repository)
+	}
 
 	// Serve the content
 	rw.Header().Set("Content-Type", contentType)
@@ -226,6 +280,57 @@ func (ps *PagesServer) parseRequest(req *http.Request) (username, repository, fi
 	filePath = "public/" + remainingPath
 
 	return username, repository, filePath, nil
+}
+
+// resolveCustomDomain resolves a custom domain to a username and repository.
+// It checks the cache only - custom domains must be registered by visiting the pages URL first.
+func (ps *PagesServer) resolveCustomDomain(ctx context.Context, domain string) (username, repository string, err error) {
+	// Check cache for registered custom domain
+	cacheKey := "custom_domain:" + domain
+	if cached, found := ps.customDomainCache.Get(cacheKey); found {
+		// Parse cached value "username:repository"
+		parts := strings.Split(string(cached), ":")
+		if len(parts) == 2 {
+			return parts[0], parts[1], nil
+		}
+	}
+
+	// Custom domain not registered
+	return "", "", fmt.Errorf("custom domain not registered - visit the pages URL to activate")
+}
+
+// registerCustomDomain registers a custom domain by reading the .pages file and caching the mapping.
+// This is called when serving content from a pagesDomain request.
+func (ps *PagesServer) registerCustomDomain(ctx context.Context, username, repository string) {
+	// Get the .pages configuration
+	pagesConfig, err := ps.forgejoClient.GetPagesConfig(ctx, username, repository)
+	if err != nil {
+		// No .pages file or error reading it, nothing to register
+		return
+	}
+
+	// If custom domain is configured, register it
+	if pagesConfig.CustomDomain != "" {
+		cacheKey := "custom_domain:" + pagesConfig.CustomDomain
+		cacheValue := username + ":" + repository
+		ps.customDomainCache.Set(cacheKey, []byte(cacheValue))
+	}
+}
+
+// parseCustomDomainPath parses the URL path for a custom domain request.
+// Custom domains serve directly from the public/ folder without the repository name in the path.
+func (ps *PagesServer) parseCustomDomainPath(urlPath string) string {
+	// Remove leading and trailing slashes
+	path := strings.TrimPrefix(urlPath, "/")
+	path = strings.TrimSuffix(path, "/")
+
+	// If empty, serve index.html
+	if path == "" {
+		return "public/index.html"
+	}
+
+	// Add public/ prefix
+	return "public/" + path
 }
 
 // serveContent serves file content with appropriate headers.
