@@ -222,8 +222,25 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Get the file content from Forgejo
 	content, contentType, err := ps.forgejoClient.GetFileContent(req.Context(), username, repository, filePath)
 	if err != nil {
-		ps.serveError(rw, http.StatusNotFound, "File not found")
-		return
+		// If file not found and path doesn't end with a file extension, try index.html
+		if !hasFileExtension(filePath) {
+			indexPath := filePath + "/index.html"
+			indexContent, indexContentType, indexErr := ps.forgejoClient.GetFileContent(req.Context(), username, repository, indexPath)
+			if indexErr == nil {
+				// Found index.html in directory
+				content = indexContent
+				contentType = indexContentType
+				filePath = indexPath // Update cache key to use index.html path
+			} else {
+				// Neither original file nor index.html exists
+				ps.serveError(rw, http.StatusNotFound, "File not found")
+				return
+			}
+		} else {
+			// File has extension and doesn't exist
+			ps.serveError(rw, http.StatusNotFound, "File not found")
+			return
+		}
 	}
 
 	// Cache the content
@@ -506,3 +523,23 @@ func detectContentType(filePath string, content []byte) string {
 		return http.DetectContentType(content)
 	}
 }
+
+// hasFileExtension checks if a file path has a file extension.
+// Used to detect directory paths vs file paths for automatic index.html handling.
+func hasFileExtension(path string) bool {
+	// Get the last path segment
+	segments := strings.Split(path, "/")
+	if len(segments) == 0 {
+		return false
+	}
+	lastSegment := segments[len(segments)-1]
+	
+	// Check if it contains a dot (indicating an extension)
+	// But not if it starts with a dot (hidden file)
+	if strings.Contains(lastSegment, ".") && !strings.HasPrefix(lastSegment, ".") {
+		return true
+	}
+	
+	return false
+}
+
