@@ -17,6 +17,7 @@ package pages_server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -237,79 +238,17 @@ func (fc *ForgejoClient) GetPagesConfig(ctx context.Context, owner, repo string)
 
 // decodeBase64Content decodes base64-encoded content from Forgejo API.
 func decodeBase64Content(encoded string) ([]byte, error) {
-	// Remove whitespace and newlines
+	// Remove whitespace and newlines that might be in the Forgejo API response
 	encoded = strings.ReplaceAll(encoded, "\n", "")
 	encoded = strings.ReplaceAll(encoded, "\r", "")
 	encoded = strings.ReplaceAll(encoded, " ", "")
 
-	// Decode base64
-	decoded := make([]byte, base64DecodedLen(len(encoded)))
-	n, err := base64Decode(decoded, []byte(encoded))
+	// Use Go's standard library base64 decoder
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode base64: %w", err)
 	}
 
-	return decoded[:n], nil
-}
-
-// base64Decode decodes base64 data using standard encoding.
-// This is a simplified implementation suitable for Yaegi.
-func base64Decode(dst, src []byte) (int, error) {
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-
-	// Build reverse lookup table
-	var decode [256]byte
-	for i := range decode {
-		decode[i] = 0xFF
-	}
-	for i := 0; i < len(alphabet); i++ {
-		decode[alphabet[i]] = byte(i)
-	}
-	decode['='] = 0
-
-	srcLen := len(src)
-	dstLen := 0
-
-	for i := 0; i < srcLen; i += 4 {
-		// Get 4 characters
-		b0, b1, b2, b3 := byte(0xFF), byte(0xFF), byte(0xFF), byte(0xFF)
-		if i < srcLen {
-			b0 = decode[src[i]]
-		}
-		if i+1 < srcLen {
-			b1 = decode[src[i+1]]
-		}
-		if i+2 < srcLen {
-			b2 = decode[src[i+2]]
-		}
-		if i+3 < srcLen {
-			b3 = decode[src[i+3]]
-		}
-
-		if b0 == 0xFF || b1 == 0xFF {
-			return 0, fmt.Errorf("invalid base64 data")
-		}
-
-		// Decode to 3 bytes
-		dst[dstLen] = (b0 << 2) | (b1 >> 4)
-		dstLen++
-
-		if b2 != 0xFF && src[i+2] != '=' {
-			dst[dstLen] = (b1 << 4) | (b2 >> 2)
-			dstLen++
-		}
-
-		if b3 != 0xFF && src[i+3] != '=' {
-			dst[dstLen] = (b2 << 6) | b3
-			dstLen++
-		}
-	}
-
-	return dstLen, nil
-}
-
-// base64DecodedLen returns the maximum length of decoded data.
-func base64DecodedLen(n int) int {
-	return (n * 3) / 4
+	return decoded, nil
 }
 
