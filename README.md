@@ -8,10 +8,12 @@ A Traefik middleware plugin that provides static site hosting for Forgejo and Gi
 - **Automatic HTTPS**: Seamless integration with Traefik's Let's Encrypt ACME resolver
 - **ACME Challenge Passthrough**: Automatic handling of Let's Encrypt HTTP challenges for SSL certificate generation
 - **HTTP to HTTPS Redirect**: Automatic redirection from HTTP to HTTPS (with ACME challenge exceptions)
-- **Custom Domains**: Support for custom domains with manual DNS configuration
+- **Custom Domains**: Support for custom domains with manual DNS configuration and automatic SSL certificate provisioning
+- **Directory Index Support**: Automatic `index.html` detection for directory URLs (e.g., `/pricing/` → `/pricing/index.html`)
 - **Profile Sites**: Personal pages served from `.profile` repository
 - **Custom Error Pages**: Configurable error pages from a designated repository
-- **Caching**: Built-in memory cache with optional Redis support
+- **Caching**: Built-in memory cache with optional Redis support for improved performance
+- **Redis Router Integration**: Automatic Traefik router registration for custom domains via Redis provider
 - **High Performance**: Target response time <5ms with caching
 
 ## URL Structure
@@ -47,6 +49,28 @@ The `.pages` file is a YAML configuration file:
 enabled: true
 custom_domain: example.com  # Optional: custom domain for this site
 ```
+
+### Directory Index Support
+
+The plugin automatically detects directory URLs and serves `index.html`:
+
+**Example Directory Structure:**
+```
+public/
+├── index.html          # Served at: /
+├── about.html         # Served at: /about.html
+├── pricing/
+│   └── index.html     # Served at: /pricing/ (automatic)
+└── docs/
+    ├── index.html     # Served at: /docs/ (automatic)
+    └── guide.html     # Served at: /docs/guide.html
+```
+
+**How it works:**
+- Accessing `/pricing/` automatically tries `/pricing/index.html`
+- Enables clean URLs without file extensions
+- Only applies to paths without file extensions (directories)
+- Falls back to 404 if neither the directory nor `index.html` exists
 
 ## Installation
 

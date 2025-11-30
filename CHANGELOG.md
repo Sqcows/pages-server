@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SVG File Corruption**: Fixed "Char 0x0 out of allowed range" errors when serving SVG files
+  - Replaced custom base64 decoder with Go's standard library `encoding/base64`
+  - Removed buggy custom `base64Decode` and `base64DecodedLen` functions
+  - Fixes corruption issues with binary files (SVGs, images, fonts)
+  - Standard library decoder is more robust and well-tested
+
+### Added
+- **Directory Index Support**: Automatic `index.html` detection for directory URLs
+  - Accessing `/pricing/` now automatically tries `/pricing/index.html`
+  - Enables clean URLs without file extensions
+  - Only applies to paths without file extensions (directories)
+  - Falls back to 404 if neither the directory nor `index.html` exists
+  - Standard web server behavior for improved user experience
+
 ## [0.0.5] - 2025-11-29
 
 ### Fixed
