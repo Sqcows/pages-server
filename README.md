@@ -9,6 +9,7 @@ A Traefik middleware plugin that provides static site hosting for Forgejo and Gi
 - **ACME Challenge Passthrough**: Automatic handling of Let's Encrypt HTTP challenges for SSL certificate generation
 - **HTTP to HTTPS Redirect**: Automatic redirection from HTTP to HTTPS (with ACME challenge exceptions)
 - **Custom Domains**: Support for custom domains with manual DNS configuration and automatic SSL certificate provisioning
+- **Password Protection**: Protect websites with SHA256-hashed passwords and secure HMAC-signed cookies
 - **Directory Index Support**: Automatic `index.html` detection for directory URLs (e.g., `/pricing/` → `/pricing/index.html`)
 - **Profile Sites**: Personal pages served from `.profile` repository
 - **Custom Error Pages**: Configurable error pages from a designated repository
@@ -201,6 +202,8 @@ http:
 | `traefikRedisCertResolver` | string | "letsencrypt-http" | Certificate resolver to use for dynamically registered custom domains |
 | `traefikRedisRouterTTL` | int | 600 | TTL for Traefik router configurations in seconds |
 | `traefikRedisRootKey` | string | "traefik" | Redis root key for Traefik configuration |
+| `authCookieDuration` | int | 3600 | Authentication cookie validity in seconds (for password protection) |
+| `authSecretKey` | string | "" | Secret key for HMAC cookie signing (recommended for password protection security) |
 
 ## Custom Domains
 
@@ -314,6 +317,154 @@ http:
           forgejoHost: https://git.example.com
           enableCustomDomains: false  # Disable custom domains
 ```
+
+## Password Protection
+
+Protect your websites with password authentication. Users must enter a password to access the site.
+
+### How It Works
+
+1. Add a `password:` field to your `.pages` file with a SHA256 hash
+2. When someone visits your site, they see a login page
+3. After entering the correct password, a secure cookie is set
+4. The cookie is valid for the configured duration (default: 1 hour)
+5. Password hashes are cached for 60 seconds to reduce .pages file reads
+
+### Setting Up Password Protection
+
+**Step 1: Generate a password hash**
+
+```bash
+# Generate SHA256 hash of your password
+echo -n "mypassword" | shasum -a 256
+
+# Example output:
+# e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+```
+
+**Step 2: Add to your `.pages` file**
+
+```yaml
+enabled: true
+custom_domain: example.com  # Optional
+password: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+```
+
+**Step 3: Configure authentication settings (optional)**
+
+```yaml
+http:
+  middlewares:
+    pages-server:
+      plugin:
+        pages-server:
+          pagesDomain: pages.example.com
+          forgejoHost: https://git.example.com
+          authCookieDuration: 3600  # Cookie validity in seconds (default: 3600 = 1 hour)
+          authSecretKey: "your-random-secret-key-here"  # For HMAC cookie signing (recommended)
+```
+
+**Step 4: Commit and push**
+
+```bash
+git add .pages
+git commit -m "Add password protection"
+git push
+```
+
+### Security Features
+
+- **SHA256 Password Hashing**: Passwords are never stored in plaintext
+- **HMAC-Signed Cookies**: Prevents cookie tampering (when `authSecretKey` is configured)
+- **Secure Cookies**:
+  - `HttpOnly` - Prevents JavaScript access (XSS protection)
+  - `Secure` - Only sent over HTTPS
+  - `SameSite=Strict` - Prevents CSRF attacks
+- **Password Hash Caching**: 60-second TTL reduces .pages file reads
+- **Per-Repository Authentication**: Each repository has its own cookie
+
+### Configuration Options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `authCookieDuration` | int | 3600 | Authentication cookie validity in seconds |
+| `authSecretKey` | string | "" | Secret key for HMAC cookie signing (recommended for security) |
+
+### Login Page
+
+The plugin provides a beautiful, centered login page with:
+- Gradient purple background
+- Responsive design
+- Repository name display
+- Error messages for incorrect passwords
+- Auto-focus on password field
+
+### Example .pages File
+
+```yaml
+# Basic password protection
+enabled: true
+password: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+# With custom domain
+enabled: true
+custom_domain: www.example.com
+password: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+```
+
+### Generating Strong Passwords
+
+**Using OpenSSL (Linux/Mac):**
+```bash
+# Generate random password
+openssl rand -base64 32
+
+# Hash it
+echo -n "your-password-here" | openssl dgst -sha256
+```
+
+**Using Python:**
+```python
+import hashlib
+password = "mypassword"
+hash_object = hashlib.sha256(password.encode())
+print(hash_object.hexdigest())
+```
+
+### Cookie Lifespan
+
+- **Default**: 1 hour (3600 seconds)
+- **Configurable**: Set any duration via `authCookieDuration`
+- **Recommended**:
+  - Public sites: 1-4 hours (3600-14400 seconds)
+  - Private sites: 8-24 hours (28800-86400 seconds)
+  - Internal sites: 7 days (604800 seconds)
+
+### Removing Password Protection
+
+Simply remove the `password:` line from your `.pages` file:
+
+```yaml
+enabled: true
+# password: removed  # No longer password protected
+```
+
+### Troubleshooting
+
+**Login page doesn't appear:**
+- Verify the `password:` field is in your `.pages` file
+- Check that the hash is a valid SHA256 hash (64 hex characters)
+- Wait 60 seconds for password cache to update
+
+**Cookie not persisting:**
+- Ensure your site is served over HTTPS (cookies are Secure-only)
+- Check browser cookie settings allow cookies
+- Verify `authCookieDuration` is set correctly
+
+**"Incorrect password" even with correct password:**
+- Verify you're using the SHA256 hash in .pages, not plaintext
+- Ensure no extra spaces or newlines in the hash
+- Re-generate the hash: `echo -n "password" | shasum -a 256`
 
 ## Custom Error Pages
 
