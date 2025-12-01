@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enables external reaper scripts to validate and clean up domains via cron
   - Domain mappings persist until explicitly deleted
   - No impact on file content cache (still uses configured TTL)
+- **HTTP Response Headers**: Added server identification and cache status headers
+  - Added `Server: bovine` header to all responses (content and error pages)
+  - Added `X-Cache-Status: HIT` header when serving content from cache
+  - Added `X-Cache-Status: MISS` header when fetching content from Forgejo API
+  - Enables monitoring and debugging of cache behavior
 
 ## [0.0.5] - 2025-11-29
 

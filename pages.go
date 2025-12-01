@@ -209,7 +209,7 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Check cache first
 	cacheKey := fmt.Sprintf("%s:%s:%s", username, repository, filePath)
 	if cached, found := ps.cache.Get(cacheKey); found {
-		ps.serveContent(rw, filePath, cached)
+		ps.serveContent(rw, filePath, cached, "HIT")
 		return
 	}
 
@@ -252,9 +252,11 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		ps.registerCustomDomain(req.Context(), username, repository)
 	}
 
-	// Serve the content
+	// Serve the content with cache MISS header
 	rw.Header().Set("Content-Type", contentType)
 	rw.Header().Set("Cache-Control", "public, max-age=300")
+	rw.Header().Set("Server", "bovine")
+	rw.Header().Set("X-Cache-Status", "MISS")
 	rw.WriteHeader(http.StatusOK)
 	rw.Write(content)
 }
@@ -423,10 +425,12 @@ func (ps *PagesServer) parseCustomDomainPath(urlPath string) string {
 }
 
 // serveContent serves file content with appropriate headers.
-func (ps *PagesServer) serveContent(rw http.ResponseWriter, filePath string, content []byte) {
+func (ps *PagesServer) serveContent(rw http.ResponseWriter, filePath string, content []byte, cacheStatus string) {
 	contentType := detectContentType(filePath, content)
 	rw.Header().Set("Content-Type", contentType)
 	rw.Header().Set("Cache-Control", "public, max-age=300")
+	rw.Header().Set("Server", "bovine")
+	rw.Header().Set("X-Cache-Status", cacheStatus)
 	rw.WriteHeader(http.StatusOK)
 	rw.Write(content)
 }
@@ -438,6 +442,7 @@ func (ps *PagesServer) serveError(rw http.ResponseWriter, statusCode int, messag
 	ps.mu.RUnlock()
 
 	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+	rw.Header().Set("Server", "bovine")
 	rw.WriteHeader(statusCode)
 
 	if hasCustomError {
