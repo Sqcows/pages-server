@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] - 2025-12-01
+
 ### Fixed
 - **CRITICAL: Redis Binary Data Corruption**: Fixed data corruption when reading large files from Redis cache
   - Changed `reader.Read()` to `io.ReadFull()` in Redis RESP protocol bulk string reader
@@ -278,7 +280,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Troubleshooting guide
 - API documentation in code comments
 
-[Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.3...HEAD
+[Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.6...HEAD
+[0.0.6]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.5...v0.0.6
+[0.0.5]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.4...v0.0.5
 [0.0.4]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.3...v0.0.4
 [0.0.3]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.2...v0.0.3
 [0.0.2]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.1...v0.0.2
