@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Falls back to 404 if neither the directory nor `index.html` exists
   - Standard web server behavior for improved user experience
 
+### Changed
+- **Persistent Custom Domain Storage**: Custom domain mappings now stored without TTL
+  - Changed customDomainCache initialization to use TTL=0 (persistent storage)
+  - Modified `SetWithTTL()` to use `SET` command instead of `SETEX` when TTL=0
+  - Modified `MemoryCache` to use `expiration=-1` for never-expiring items
+  - Enables external reaper scripts to validate and clean up domains via cron
+  - Domain mappings persist until explicitly deleted
+  - No impact on file content cache (still uses configured TTL)
+
 ## [0.0.5] - 2025-11-29
 
 ### Fixed

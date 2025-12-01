@@ -192,7 +192,7 @@ http:
 | `forgejoToken` | string | "" | API token for Forgejo (required for private repos and custom domain lookups) |
 | `errorPagesRepo` | string | "" | Repository for custom error pages (format: `username/repository`) |
 | `enableCustomDomains` | bool | true | Enable custom domain support |
-| `customDomainCacheTTL` | int | 600 | Cache TTL for custom domain lookups in seconds |
+| `customDomainCacheTTL` | int | 600 | **Deprecated**: Custom domain mappings are now persistent (stored without TTL) |
 | `redisHost` | string | "" | Redis server host for caching |
 | `redisPort` | int | 6379 | Redis server port |
 | `redisPassword` | string | "" | Redis password |
@@ -212,17 +212,18 @@ The plugin uses a registration-based approach for custom domains:
 
 1. **Registration**: When you visit your pages URL (`https://username.pages.example.com/repository`), the plugin:
    - Reads your repository's `.pages` file
-   - If a `custom_domain` is specified, registers it in the cache
+   - If a `custom_domain` is specified, registers it persistently
    - Maps the custom domain to your repository
 
 2. **Custom Domain Requests**: When a request arrives at your custom domain:
-   - The plugin looks up the domain in the cache
+   - The plugin looks up the domain in persistent storage
    - If found, serves content from the registered repository
    - If not found, returns a helpful 404 message
 
-3. **Cache Refresh**: The mapping is cached for `customDomainCacheTTL` seconds (default: 600)
-   - Visit your pages URL again to refresh the registration
-   - Keeps active custom domains fast without searching all repositories
+3. **Persistent Storage**: Domain mappings are stored without expiration
+   - Mappings persist until explicitly deleted
+   - Use external reaper scripts to validate and clean up inactive domains
+   - Keeps all registered custom domains fast without repository searching
 
 ### Setting Up a Custom Domain
 
@@ -283,20 +284,21 @@ The plugin uses a registration-based approach for custom domains:
    - Serves your site with HTTPS
    - Handles certificate renewal
 
-### Custom Domain Caching
+### Custom Domain Storage
 
-The plugin caches custom domain → repository mappings:
-- Cache TTL: 600 seconds (configurable via `customDomainCacheTTL`)
-- Only active custom domains are cached (those that have been visited)
-- Visit your pages URL to refresh the registration
-- Cache expires automatically after TTL
+The plugin stores custom domain → repository mappings persistently:
+- **Persistent Storage**: Custom domain mappings are stored without expiration
+- **Automatic Registration**: Mappings are created when you visit your pages URL
+- **No Automatic Cleanup**: Mappings persist until explicitly deleted
+- **External Validation**: Use external reaper scripts to validate and clean up domains
+- **File Content Cache**: Separate from custom domain storage, uses configured TTL (default: 300 seconds)
 
 ### Performance Considerations
 
-- **All requests are fast**: Custom domain lookups use cache only (no repository searching)
+- **All requests are fast**: Custom domain lookups use persistent storage (no repository searching)
 - **Predictable performance**: <5ms response time for all requests
-- **Scalable**: Works efficiently with any number of repositories
-- **Cache refresh**: Simply visit your pages URL to keep the custom domain active
+- **Scalable**: Works efficiently with unlimited registered custom domains
+- **Persistent mappings**: Domains remain active permanently without re-registration
 
 ### Disabling Custom Domains
 
@@ -433,8 +435,7 @@ http:
           redisHost: localhost
           redisPort: 6379
           redisPassword: ""  # Optional
-          cacheTTL: 300
-          customDomainCacheTTL: 600
+          cacheTTL: 300  # TTL for file content cache (not custom domain mappings)
 ```
 
 ### Testing Redis
