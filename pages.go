@@ -416,9 +416,15 @@ func (ps *PagesServer) registerCustomDomain(ctx context.Context, username, repos
 
 	// If custom domain is configured, register it
 	if pagesConfig.CustomDomain != "" {
+		// Forward mapping: custom_domain:domain -> username:repository
 		cacheKey := "custom_domain:" + pagesConfig.CustomDomain
 		cacheValue := username + ":" + repository
 		ps.customDomainCache.Set(cacheKey, []byte(cacheValue))
+
+		// Reverse mapping: username:repository -> custom_domain
+		// This allows looking up the custom domain from the repository
+		reverseCacheKey := username + ":" + repository
+		ps.customDomainCache.Set(reverseCacheKey, []byte(pagesConfig.CustomDomain))
 
 		// Register Traefik router for automatic SSL certificate generation
 		if err := ps.registerTraefikRouter(ctx, pagesConfig.CustomDomain); err != nil {

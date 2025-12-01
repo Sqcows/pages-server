@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Custom Domain Reverse Mapping**: Added persistent reverse mapping cache for custom domains
+  - Now caches both `custom_domain:domain -> username:repository` and `username:repository -> domain`
+  - Prevents custom domain resolution failures when forward mapping expires
+  - Reverse mapping key format: `username:repository` (e.g., `squarecows:sqcows-web`)
+  - Both mappings use TTL=0 (persistent storage) for reliability
+  - Enables bidirectional lookup for custom domain management
+
 ## [0.0.7] - 2025-12-01
 
 ### Added
