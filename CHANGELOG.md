@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Password Protection**: Protect websites with password authentication
+  - Add `password:` field in `.pages` file with SHA256 hash of password
+  - Automatic login page with centered password form
+  - Secure HMAC-signed cookies for authentication (1-hour default duration)
+  - Password hash caching with 60-second TTL to reduce .pages file reads
+  - Cookie features: HttpOnly, Secure (HTTPS-only), SameSite=Strict
+  - Configurable auth cookie duration via `authCookieDuration` (seconds)
+  - Optional `authSecretKey` for cookie signing (recommended for security)
+  - Beautiful gradient login UI with error messages
+  - Per-repository authentication (cookies tied to specific repo)
+
 ## [0.0.6] - 2025-12-01
 
 ### Fixed

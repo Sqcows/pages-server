@@ -66,6 +66,7 @@ type FileContent struct {
 type PagesConfig struct {
 	CustomDomain string `yaml:"custom_domain"`
 	Enabled      bool   `yaml:"enabled"`
+	Password     string `yaml:"password"` // SHA256 hash of the password
 }
 
 // doRequest performs an HTTP request to the Forgejo API.
@@ -212,7 +213,7 @@ func (fc *ForgejoClient) GetPagesConfig(ctx context.Context, owner, repo string)
 		Enabled: true, // Default to enabled if .pages file exists
 	}
 
-	// Simple YAML parsing for custom_domain field
+	// Simple YAML parsing for custom_domain, enabled, and password fields
 	lines := strings.Split(string(content), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -229,6 +230,14 @@ func (fc *ForgejoClient) GetPagesConfig(ctx context.Context, owner, repo string)
 			if len(parts) == 2 {
 				enabled := strings.TrimSpace(parts[1])
 				config.Enabled = enabled == "true" || enabled == "yes"
+			}
+		}
+		if strings.HasPrefix(line, "password:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				config.Password = strings.TrimSpace(parts[1])
+				// Remove quotes if present
+				config.Password = strings.Trim(config.Password, "\"'")
 			}
 		}
 	}

@@ -19,10 +19,14 @@ package pages_server
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Config holds the plugin configuration.
@@ -68,6 +72,12 @@ type Config struct {
 
 	// TraefikRedisRootKey is the Redis root key for Traefik configuration (default: "traefik")
 	TraefikRedisRootKey string `json:"traefikRedisRootKey,omitempty"`
+
+	// AuthCookieDuration is the duration in seconds for authentication cookies (default: 3600 = 1 hour)
+	AuthCookieDuration int `json:"authCookieDuration,omitempty"`
+
+	// AuthSecretKey is the secret key for signing authentication cookies (required for cookie security)
+	AuthSecretKey string `json:"authSecretKey,omitempty"`
 }
 
 // CreateConfig creates and initializes the plugin configuration.
@@ -81,6 +91,7 @@ func CreateConfig() *Config {
 		TraefikRedisCertResolver:  "letsencrypt-http",
 		TraefikRedisRouterTTL:     600,
 		TraefikRedisRootKey:       "traefik",
+		AuthCookieDuration:        3600, // 1 hour
 	}
 }
 
@@ -92,6 +103,7 @@ type PagesServer struct {
 	forgejoClient     *ForgejoClient
 	cache             Cache
 	customDomainCache Cache // Cache for custom domain -> (username/repo) mappings
+	passwordCache     Cache // Cache for password hashes with 60-second TTL
 	mu                sync.RWMutex
 	errorPages        map[int][]byte
 }
@@ -132,6 +144,15 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		customDomainCache = NewMemoryCache(0) // In-memory also uses no expiry
 	}
 
+	// Initialize password cache with 60-second TTL
+	// Password hashes are cached briefly to reduce .pages file reads
+	var passwordCache Cache
+	if config.RedisHost != "" {
+		passwordCache = NewRedisCache(config.RedisHost, config.RedisPort, config.RedisPassword, 60) // 60-second TTL
+	} else {
+		passwordCache = NewMemoryCache(60) // 60-second TTL
+	}
+
 	ps := &PagesServer{
 		next:              next,
 		name:              name,
@@ -139,6 +160,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		forgejoClient:     forgejoClient,
 		cache:             cache,
 		customDomainCache: customDomainCache,
+		passwordCache:     passwordCache,
 		errorPages:        make(map[int][]byte),
 	}
 
@@ -204,6 +226,45 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		// Custom domains disabled and not a pagesDomain request
 		ps.serveError(rw, http.StatusBadRequest, "Invalid domain")
 		return
+	}
+
+	// Check if repository is password protected
+	passwordHash, err := ps.getPasswordHash(req.Context(), username, repository)
+	if err == nil && passwordHash != "" {
+		// Repository is password protected
+		if !ps.isAuthenticated(req, username, repository) {
+			// User is not authenticated
+			if req.Method == "POST" {
+				// Handle password submission
+				if err := req.ParseForm(); err != nil {
+					ps.serveLoginPage(rw, req, username, repository, "Invalid form data")
+					return
+				}
+
+				submittedPassword := req.FormValue("password")
+				submittedHash := hashPassword(submittedPassword)
+
+				if submittedHash == passwordHash {
+					// Password correct - set auth cookie and redirect
+					cookie := ps.createAuthCookie(username, repository)
+					http.SetCookie(rw, cookie)
+
+					// Redirect to the same URL without POST data
+					redirectURL := req.URL.String()
+					http.Redirect(rw, req, redirectURL, http.StatusSeeOther)
+					return
+				} else {
+					// Password incorrect
+					ps.serveLoginPage(rw, req, username, repository, "Incorrect password")
+					return
+				}
+			} else {
+				// Show login page
+				ps.serveLoginPage(rw, req, username, repository, "")
+				return
+			}
+		}
+		// User is authenticated, continue to serve content
 	}
 
 	// Check cache first
@@ -539,13 +600,249 @@ func hasFileExtension(path string) bool {
 		return false
 	}
 	lastSegment := segments[len(segments)-1]
-	
+
 	// Check if it contains a dot (indicating an extension)
 	// But not if it starts with a dot (hidden file)
 	if strings.Contains(lastSegment, ".") && !strings.HasPrefix(lastSegment, ".") {
 		return true
 	}
-	
+
 	return false
+}
+
+// getPasswordHash retrieves the password hash for a repository, checking cache first.
+func (ps *PagesServer) getPasswordHash(ctx context.Context, username, repository string) (string, error) {
+	// Check password cache first
+	cacheKey := fmt.Sprintf("password:%s:%s", username, repository)
+	if cached, found := ps.passwordCache.Get(cacheKey); found {
+		return string(cached), nil
+	}
+
+	// Cache miss - fetch .pages config from Forgejo
+	pagesConfig, err := ps.forgejoClient.GetPagesConfig(ctx, username, repository)
+	if err != nil {
+		return "", err
+	}
+
+	// Cache the password hash (even if empty) with 60-second TTL
+	ps.passwordCache.Set(cacheKey, []byte(pagesConfig.Password))
+
+	return pagesConfig.Password, nil
+}
+
+// isAuthenticated checks if the request has a valid authentication cookie.
+func (ps *PagesServer) isAuthenticated(req *http.Request, username, repository string) bool {
+	cookieName := fmt.Sprintf("pages_auth_%s_%s", username, repository)
+	cookie, err := req.Cookie(cookieName)
+	if err != nil {
+		return false
+	}
+
+	// Verify cookie signature
+	return ps.verifyAuthCookie(cookie.Value, username, repository)
+}
+
+// verifyAuthCookie verifies the authentication cookie signature.
+func (ps *PagesServer) verifyAuthCookie(cookieValue, username, repository string) bool {
+	if ps.config.AuthSecretKey == "" {
+		// If no secret key configured, fall back to simple validation
+		return cookieValue != ""
+	}
+
+	// Cookie format: <timestamp>|<signature>
+	parts := strings.Split(cookieValue, "|")
+	if len(parts) != 2 {
+		return false
+	}
+
+	timestamp := parts[0]
+	signature := parts[1]
+
+	// Check if cookie has expired
+	if !ps.isTimestampValid(timestamp) {
+		return false
+	}
+
+	// Verify signature
+	expectedSignature := ps.generateSignature(timestamp, username, repository)
+	return hmac.Equal([]byte(signature), []byte(expectedSignature))
+}
+
+// generateSignature creates an HMAC signature for the cookie.
+func (ps *PagesServer) generateSignature(timestamp, username, repository string) string {
+	message := fmt.Sprintf("%s:%s:%s", timestamp, username, repository)
+	h := hmac.New(sha256.New, []byte(ps.config.AuthSecretKey))
+	h.Write([]byte(message))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// isTimestampValid checks if the timestamp is within the allowed duration.
+func (ps *PagesServer) isTimestampValid(timestamp string) bool {
+	// Parse timestamp as Unix seconds
+	var ts int64
+	if _, err := fmt.Sscanf(timestamp, "%d", &ts); err != nil {
+		return false
+	}
+
+	cookieTime := time.Unix(ts, 0)
+	expirationDuration := time.Duration(ps.config.AuthCookieDuration) * time.Second
+
+	return time.Since(cookieTime) < expirationDuration
+}
+
+// createAuthCookie creates a signed authentication cookie.
+func (ps *PagesServer) createAuthCookie(username, repository string) *http.Cookie {
+	timestamp := fmt.Sprintf("%d", time.Now().Unix())
+
+	var cookieValue string
+	if ps.config.AuthSecretKey != "" {
+		signature := ps.generateSignature(timestamp, username, repository)
+		cookieValue = fmt.Sprintf("%s|%s", timestamp, signature)
+	} else {
+		// Fallback without signature if no secret key
+		cookieValue = timestamp
+	}
+
+	cookieName := fmt.Sprintf("pages_auth_%s_%s", username, repository)
+
+	return &http.Cookie{
+		Name:     cookieName,
+		Value:    cookieValue,
+		Path:     "/",
+		MaxAge:   ps.config.AuthCookieDuration,
+		HttpOnly: true,
+		Secure:   true, // HTTPS only
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
+// hashPassword creates a SHA256 hash of the password.
+func hashPassword(password string) string {
+	hash := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(hash[:])
+}
+
+// serveLoginPage serves the password login page.
+func (ps *PagesServer) serveLoginPage(rw http.ResponseWriter, req *http.Request, username, repository string, errorMsg string) {
+	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+	rw.Header().Set("Server", "bovine")
+	rw.WriteHeader(http.StatusOK)
+
+	errorHTML := ""
+	if errorMsg != "" {
+		errorHTML = fmt.Sprintf(`<p class="error">%s</p>`, errorMsg)
+	}
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Protected</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            max-width: 400px;
+            width: 100%%;
+        }
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        input[type="password"] {
+            padding: 14px 16px;
+            border: 2px solid #e1e4e8;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%);
+            color: white;
+            padding: 14px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .repo-info {
+            background: #f6f8fa;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #586069;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 Password Protected</h1>
+        <p>This page requires authentication</p>
+        <div class="repo-info">
+            <strong>%s/%s</strong>
+        </div>
+        %s
+        <form method="POST" action="">
+            <input type="password" name="password" placeholder="Enter password" required autofocus>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+</body>
+</html>`, username, repository, errorHTML)
+
+	rw.Write([]byte(html))
 }
 
