@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Cache Reaper Script**: Python script for cleaning up stale domain mappings
+  - Located in `reaper/` directory with full documentation
+  - Connects to Redis and scans all custom domain mappings
+  - Checks Forgejo API to verify repositories still have `.pages` files
+  - Removes stale mappings (forward, reverse, and Traefik router configs)
+  - Dry-run mode for safe testing before actual deletion
+  - Detailed logging and summary statistics
+  - Designed for cron scheduling (hourly, daily, etc.)
+  - Exit codes for monitoring and alerting
+  - Environment variable support for secure credential management
 - **Custom Domain Conflict Prevention**: Validates custom domain ownership during registration
   - Checks cache before registering a custom domain to prevent conflicts
   - Rejects registration if domain is already claimed by a different repository
