@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Beautiful gradient login UI with error messages
   - Per-repository authentication (cookies tied to specific repo)
 
+### Fixed
+- **CRITICAL: Traefik Router Expiration**: Fixed bug where Traefik router configurations were expiring
+  - Changed default `traefikRedisRouterTTL` from 600 seconds to 0 (persistent storage)
+  - Traefik router configurations (`traefik/` prefix) now persist until explicitly deleted
+  - Prevents custom domain sites from disappearing from Traefik after 10 minutes
+  - Matches behavior of custom domain mappings (also persistent)
+  - External reaper process should validate and clean up stale routers via cron
+  - No impact on file content cache (still uses configured TTL)
+
 ## [0.0.6] - 2025-12-01
 
 ### Fixed

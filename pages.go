@@ -89,7 +89,7 @@ func CreateConfig() *Config {
 		CustomDomainCacheTTL:      600,
 		TraefikRedisRouterEnabled: true,
 		TraefikRedisCertResolver:  "letsencrypt-http",
-		TraefikRedisRouterTTL:     600,
+		TraefikRedisRouterTTL:     0, // Persistent - cleaned by reaper
 		TraefikRedisRootKey:       "traefik",
 		AuthCookieDuration:        3600, // 1 hour
 	}
