@@ -123,12 +123,13 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		cache = NewMemoryCache(config.CacheTTL)
 	}
 
-	// Initialize custom domain cache with separate TTL
+	// Initialize custom domain cache without TTL (persistent until cleaned by reaper)
+	// Custom domain mappings don't expire - they persist until removed by external reaper script
 	var customDomainCache Cache
 	if config.RedisHost != "" {
-		customDomainCache = NewRedisCache(config.RedisHost, config.RedisPort, config.RedisPassword, config.CustomDomainCacheTTL)
+		customDomainCache = NewRedisCache(config.RedisHost, config.RedisPort, config.RedisPassword, 0) // TTL=0 means no expiry
 	} else {
-		customDomainCache = NewMemoryCache(config.CustomDomainCacheTTL)
+		customDomainCache = NewMemoryCache(0) // In-memory also uses no expiry
 	}
 
 	ps := &PagesServer{

@@ -87,8 +87,8 @@ func (mc *MemoryCache) Get(key string) ([]byte, bool) {
 		return nil, false
 	}
 
-	// Check if item has expired
-	if time.Now().UnixNano() > item.expiration {
+	// Check if item has expired (expiration = -1 means never expires)
+	if item.expiration != -1 && time.Now().UnixNano() > item.expiration {
 		return nil, false
 	}
 
@@ -100,7 +100,14 @@ func (mc *MemoryCache) Set(key string, value []byte) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
-	expiration := time.Now().Add(mc.ttl).UnixNano()
+	var expiration int64
+	if mc.ttl <= 0 {
+		// TTL = 0 or negative means never expire
+		expiration = -1
+	} else {
+		expiration = time.Now().Add(mc.ttl).UnixNano()
+	}
+
 	mc.items[key] = &cacheItem{
 		value:      value,
 		expiration: expiration,
@@ -435,19 +442,31 @@ func (rc *RedisCache) SetWithTTL(key string, value []byte, ttlSeconds int) error
 	}
 	defer rc.releaseConnection(conn)
 
-	// Send SETEX command (SET with expiration)
-	// SETEX key seconds value
-	err = rc.sendCommand(conn, "SETEX", key, strconv.Itoa(ttlSeconds), string(value))
-	if err != nil {
-		rc.fallback.Set(key, value)
-		return fmt.Errorf("failed to send SETEX command: %w", err)
+	// If TTL is 0 or negative, store without expiration (persistent)
+	// Otherwise use SETEX for TTL-based expiration
+	if ttlSeconds <= 0 {
+		// Send SET command (no expiration)
+		// SET key value
+		err = rc.sendCommand(conn, "SET", key, string(value))
+		if err != nil {
+			rc.fallback.Set(key, value)
+			return fmt.Errorf("failed to send SET command: %w", err)
+		}
+	} else {
+		// Send SETEX command (SET with expiration)
+		// SETEX key seconds value
+		err = rc.sendCommand(conn, "SETEX", key, strconv.Itoa(ttlSeconds), string(value))
+		if err != nil {
+			rc.fallback.Set(key, value)
+			return fmt.Errorf("failed to send SETEX command: %w", err)
+		}
 	}
 
 	// Read response (should be +OK)
 	_, err = rc.readResponse(conn)
 	if err != nil {
 		rc.fallback.Set(key, value)
-		return fmt.Errorf("failed to read SETEX response: %w", err)
+		return fmt.Errorf("failed to read response: %w", err)
 	}
 
 	// Also update fallback cache for consistency
