@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Custom Domain Conflict Prevention**: Validates custom domain ownership during registration
+  - Checks cache before registering a custom domain to prevent conflicts
+  - Rejects registration if domain is already claimed by a different repository
+  - Logs error message with conflicting repository details
+  - Allows re-registration for the same repository (updates mappings)
+  - Prevents domain hijacking and configuration errors
+
 ### Fixed
 - **Custom Domain Reverse Mapping**: Added persistent reverse mapping cache for custom domains
   - Now caches both `custom_domain:domain -> username:repository` and `username:repository -> domain`

@@ -416,8 +416,22 @@ func (ps *PagesServer) registerCustomDomain(ctx context.Context, username, repos
 
 	// If custom domain is configured, register it
 	if pagesConfig.CustomDomain != "" {
-		// Forward mapping: custom_domain:domain -> username:repository
+		// Check if custom domain is already registered to a different repository
 		cacheKey := "custom_domain:" + pagesConfig.CustomDomain
+		if existingMapping, found := ps.customDomainCache.Get(cacheKey); found {
+			existingRepo := string(existingMapping)
+			currentRepo := username + ":" + repository
+
+			// If domain is already registered to a different repository, reject the registration
+			if existingRepo != currentRepo {
+				fmt.Printf("ERROR: Custom domain %s is already registered to %s, cannot register to %s\n",
+					pagesConfig.CustomDomain, existingRepo, currentRepo)
+				return
+			}
+			// Domain is already registered to this repository, continue to update mappings
+		}
+
+		// Forward mapping: custom_domain:domain -> username:repository
 		cacheValue := username + ":" + repository
 		ps.customDomainCache.Set(cacheKey, []byte(cacheValue))
 
