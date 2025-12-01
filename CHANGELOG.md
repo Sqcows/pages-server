@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Reaper Script**: Added missing `priority` key to Traefik router cleanup
+  - Now properly deletes all 6 Traefik router configuration keys
+  - Prevents orphaned `priority` keys from remaining in Redis
+
 ### Added
 - **Cache Reaper Script**: Python script for cleaning up stale domain mappings
   - Located in `reaper/` directory with full documentation

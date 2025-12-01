@@ -101,6 +101,7 @@ class CacheReaper:
             f"traefik/http/routers/custom-{sanitized_domain}/service",
             f"traefik/http/routers/custom-{sanitized_domain}/tls/certresolver",
             f"traefik/http/routers/custom-{sanitized_domain}/middlewares/0",
+            f"traefik/http/routers/custom-{sanitized_domain}/priority",
         ]
         keys_to_delete.extend(traefik_keys)
 
