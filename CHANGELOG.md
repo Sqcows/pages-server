@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7] - 2025-12-01
+
 ### Added
 - **Password Protection**: Protect websites with password authentication
   - Add `password:` field in `.pages` file with SHA256 hash of password
@@ -27,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Matches behavior of custom domain mappings (also persistent)
   - External reaper process should validate and clean up stale routers via cron
   - No impact on file content cache (still uses configured TTL)
+
+### Documentation
+- Moved CUSTOM_DOMAINS.md to wiki for better organization
+- Added comprehensive password protection documentation to README and wiki
+- Updated configuration examples with new auth parameters
 
 ## [0.0.6] - 2025-12-01
 
@@ -301,7 +308,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Troubleshooting guide
 - API documentation in code comments
 
-[Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.6...HEAD
+[Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.7...HEAD
+[0.0.7]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.6...v0.0.7
 [0.0.6]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.5...v0.0.6
 [0.0.5]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.4...v0.0.5
 [0.0.4]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.3...v0.0.4
