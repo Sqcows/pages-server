@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **CRITICAL: Redis Binary Data Corruption**: Fixed data corruption when reading large files from Redis cache
+  - Changed `reader.Read()` to `io.ReadFull()` in Redis RESP protocol bulk string reader
+  - `reader.Read()` doesn't guarantee reading all bytes at once, causing partial reads for large files
+  - This caused CSS/JS files to be corrupted when served from Redis cache
+  - Resulted in Subresource Integrity (SRI) hash mismatches and broken styling
+  - Files are now read completely and correctly from Redis cache
+  - **Action Required**: Clear your Redis cache after updating to remove corrupted data
 - **SVG File Corruption**: Fixed "Char 0x0 out of allowed range" errors when serving SVG files
   - Replaced custom base64 decoder with Go's standard library `encoding/base64`
   - Removed buggy custom `base64Decode` and `base64DecodedLen` functions

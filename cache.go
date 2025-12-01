@@ -18,6 +18,7 @@ package pages_server
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -357,7 +358,7 @@ func (rc *RedisCache) readResponse(conn net.Conn) (interface{}, error) {
 
 		// Read the actual data
 		data := make([]byte, length+2) // +2 for \r\n
-		_, err = reader.Read(data)
+		_, err = io.ReadFull(reader, data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read bulk string data: %w", err)
 		}
