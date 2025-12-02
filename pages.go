@@ -295,6 +295,18 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				filePath = indexPath // Update cache key to use index.html path
 			} else {
 				// Neither original file nor index.html exists
+				// Check if directory_index is enabled for directory listing
+				pagesConfig, configErr := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
+				if configErr == nil && pagesConfig.DirectoryIndex {
+					// Try to list directory contents
+					entries, listErr := ps.forgejoClient.ListDirectory(req.Context(), username, repository, filePath)
+					if listErr == nil && len(entries) > 0 {
+						// Serve directory listing
+						ps.serveDirectoryListing(rw, req, username, repository, filePath, entries)
+						return
+					}
+				}
+				// Directory listing disabled or failed, return 404
 				ps.serveError(rw, http.StatusNotFound, "File not found")
 				return
 			}
@@ -514,6 +526,236 @@ func (ps *PagesServer) serveContent(rw http.ResponseWriter, filePath string, con
 	rw.Header().Set("X-Cache-Status", cacheStatus)
 	rw.WriteHeader(http.StatusOK)
 	rw.Write(content)
+}
+
+// serveDirectoryListing serves an HTML directory listing.
+func (ps *PagesServer) serveDirectoryListing(rw http.ResponseWriter, req *http.Request, username, repository, dirPath string, entries []DirectoryEntry) {
+	// Remove "public/" prefix from dirPath for display
+	displayPath := strings.TrimPrefix(dirPath, "public/")
+	if displayPath == "" {
+		displayPath = "/"
+	} else {
+		displayPath = "/" + displayPath
+	}
+
+	// Build HTML
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Index of %s</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        header {
+            background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%);
+            color: white;
+            padding: 30px;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .breadcrumb {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        table {
+            width: 100%%;
+            border-collapse: collapse;
+        }
+        thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #dee2e6;
+        }
+        th {
+            text-align: left;
+            padding: 15px 20px;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #495057;
+        }
+        td {
+            padding: 12px 20px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        a {
+            color: #667eea;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+        .icon {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+        .icon-folder { fill: #fbbf24; }
+        .icon-file { fill: #60a5fa; }
+        .icon-parent { fill: #9ca3af; }
+        .size {
+            color: #6c757d;
+            font-size: 14px;
+            text-align: right;
+        }
+        .type {
+            color: #6c757d;
+            font-size: 14px;
+            text-align: center;
+        }
+        footer {
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 13px;
+            border-top: 1px solid #f0f0f0;
+        }
+        @media (max-width: 768px) {
+            .size, .type { display: none; }
+            th:nth-child(2), th:nth-child(3),
+            td:nth-child(2), td:nth-child(3) { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Index of %s</h1>
+            <div class="breadcrumb">%s/%s</div>
+        </header>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Size</th>
+                </tr>
+            </thead>
+            <tbody>`, displayPath, displayPath, username, repository)
+
+	// Add parent directory link if not at root
+	if displayPath != "/" {
+		parentPath := req.URL.Path
+		if strings.HasSuffix(parentPath, "/") {
+			parentPath = strings.TrimSuffix(parentPath, "/")
+		}
+		lastSlash := strings.LastIndex(parentPath, "/")
+		if lastSlash > 0 {
+			parentPath = parentPath[:lastSlash] + "/"
+		} else {
+			parentPath = "/"
+		}
+		html += fmt.Sprintf(`
+                <tr>
+                    <td>
+                        <a href="%s">
+                            <svg class="icon icon-parent" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd"/>
+                            </svg>
+                            <span>Parent Directory</span>
+                        </a>
+                    </td>
+                    <td class="type">-</td>
+                    <td class="size">-</td>
+                </tr>`, parentPath)
+	}
+
+	// Add directory entries
+	for _, entry := range entries {
+		icon := "icon-file"
+		typeName := "File"
+		sizeStr := formatSize(entry.Size)
+		href := entry.Name
+
+		if entry.IsDir {
+			icon = "icon-folder"
+			typeName = "Directory"
+			sizeStr = "-"
+			href = entry.Name + "/"
+		}
+
+		html += fmt.Sprintf(`
+                <tr>
+                    <td>
+                        <a href="%s">
+                            <svg class="icon %s" viewBox="0 0 20 20" fill="currentColor">
+                                %s
+                            </svg>
+                            <span>%s</span>
+                        </a>
+                    </td>
+                    <td class="type">%s</td>
+                    <td class="size">%s</td>
+                </tr>`,
+			href,
+			icon,
+			getSVGPath(entry.IsDir),
+			entry.Name,
+			typeName,
+			sizeStr)
+	}
+
+	html += `
+            </tbody>
+        </table>
+        <footer>
+            Powered by Forgejo Pages Server
+        </footer>
+    </div>
+</body>
+</html>`
+
+	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+	rw.Header().Set("Cache-Control", "public, max-age=60")
+	rw.Header().Set("Server", "bovine")
+	rw.WriteHeader(http.StatusOK)
+	rw.Write([]byte(html))
+}
+
+// getSVGPath returns the SVG path for file or folder icon.
+func getSVGPath(isDir bool) string {
+	if isDir {
+		return `<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>`
+	}
+	return `<path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/>`
+}
+
+// formatSize formats a file size in bytes to human-readable format.
+func formatSize(bytes int64) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%d B", bytes)
+	} else if bytes < 1024*1024 {
+		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
+	} else if bytes < 1024*1024*1024 {
+		return fmt.Sprintf("%.1f MB", float64(bytes)/(1024*1024))
+	}
+	return fmt.Sprintf("%.1f GB", float64(bytes)/(1024*1024*1024))
 }
 
 // serveError serves an error page.

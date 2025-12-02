@@ -11,6 +11,7 @@ A Traefik middleware plugin that provides static site hosting for Forgejo and Gi
 - **Custom Domains**: Support for custom domains with manual DNS configuration and automatic SSL certificate provisioning
 - **Password Protection**: Protect websites with SHA256-hashed passwords and secure HMAC-signed cookies
 - **Directory Index Support**: Automatic `index.html` detection for directory URLs (e.g., `/pricing/` → `/pricing/index.html`)
+- **Directory Listings**: Optional Apache-style directory listings for directories without index.html (configurable per-repository)
 - **Profile Sites**: Personal pages served from `.profile` repository
 - **Custom Error Pages**: Configurable error pages from a designated repository
 - **Caching**: Built-in memory cache with optional Redis support for improved performance

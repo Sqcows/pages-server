@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Directory Index**: Apache-style directory listings for directories without index.html
+  - Enable with `directory_index: true` in `.pages` file (default: false)
+  - Beautiful responsive HTML listing with file names, types, and sizes
+  - Icons for files and folders with color coding
+  - Parent directory navigation
+  - Mobile-responsive design
+  - Cached for 60 seconds for performance
+  - Only shown when enabled and no index.html exists
+
 ### Fixed
 - **Reaper Script**: Added missing `priority` key to Traefik router cleanup
   - Now properly deletes all 6 Traefik router configuration keys

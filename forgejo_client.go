@@ -64,9 +64,10 @@ type FileContent struct {
 
 // PagesConfig represents the configuration from .pages file.
 type PagesConfig struct {
-	CustomDomain string `yaml:"custom_domain"`
-	Enabled      bool   `yaml:"enabled"`
-	Password     string `yaml:"password"` // SHA256 hash of the password
+	CustomDomain   string `yaml:"custom_domain"`
+	Enabled        bool   `yaml:"enabled"`
+	Password       string `yaml:"password"`        // SHA256 hash of the password
+	DirectoryIndex bool   `yaml:"directory_index"` // Enable directory listing for directories without index.html
 }
 
 // doRequest performs an HTTP request to the Forgejo API.
@@ -240,9 +241,74 @@ func (fc *ForgejoClient) GetPagesConfig(ctx context.Context, owner, repo string)
 				config.Password = strings.Trim(config.Password, "\"'")
 			}
 		}
+		if strings.HasPrefix(line, "directory_index:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				directoryIndex := strings.TrimSpace(parts[1])
+				config.DirectoryIndex = directoryIndex == "true" || directoryIndex == "yes"
+			}
+		}
 	}
 
 	return config, nil
+}
+
+// DirectoryEntry represents a file or directory in a repository.
+type DirectoryEntry struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	Type  string `json:"type"` // "file" or "dir"
+	Size  int64  `json:"size"`
+	IsDir bool
+}
+
+// ListDirectory lists the contents of a directory in a repository.
+func (fc *ForgejoClient) ListDirectory(ctx context.Context, owner, repo, dirPath string) ([]DirectoryEntry, error) {
+	// Get repository info to determine default branch
+	repoInfo, err := fc.GetRepository(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+
+	// Construct API path for directory contents
+	path := fmt.Sprintf("/api/v1/repos/%s/%s/contents/%s", owner, repo, dirPath)
+
+	resp, err := fc.doRequest(ctx, "GET", path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("directory not found: %s", dirPath)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	// Decode the JSON response - API returns array of FileContent
+	var contents []FileContent
+	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Convert to DirectoryEntry format
+	entries := make([]DirectoryEntry, 0, len(contents))
+	for _, item := range contents {
+		entry := DirectoryEntry{
+			Name:  item.Name,
+			Path:  item.Path,
+			Type:  item.Type,
+			Size:  int64(item.Size),
+			IsDir: item.Type == "dir",
+		}
+		entries = append(entries, entry)
+	}
+
+	_ = repoInfo // Use repoInfo to avoid unused variable error
+
+	return entries, nil
 }
 
 // decodeBase64Content decodes base64-encoded content from Forgejo API.
