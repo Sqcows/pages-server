@@ -314,7 +314,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.1] - 2025-11-27
 
 ### Added
-- Initial release of Forgejo Pages Server Traefik plugin
+- Initial release of Bovine Pages Server Traefik plugin
 - Static site hosting from Forgejo/Gitea `public/` folders
 - Automatic HTTPS via Traefik's Let's Encrypt ACME resolver
 - HTTP to HTTPS redirect functionality

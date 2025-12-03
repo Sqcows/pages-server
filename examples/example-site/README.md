@@ -1,6 +1,6 @@
 # Example Static Site for Forgejo Pages
 
-This directory demonstrates the structure of a repository configured for the Forgejo Pages Server plugin.
+This directory demonstrates the structure of a repository configured for the Bovine Pages Server plugin.
 
 ## Repository Structure
 

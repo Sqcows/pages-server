@@ -1,4 +1,4 @@
-# Forgejo Pages Server - Cache Reaper
+# Bovine Pages Server - Cache Reaper
 
 The cache reaper is a Python script that cleans up stale custom domain mappings from Redis. It should be run periodically via cron to ensure that domains pointing to deleted or reconfigured repositories are removed from the cache.
 

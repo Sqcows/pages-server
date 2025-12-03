@@ -1,4 +1,4 @@
-displayName: Forgejo Pages Server
+displayName: Bovine Pages Server
 type: middleware
 import: code.squarecows.com/SquareCows/pages-server
 summary: Static site hosting for Forgejo/Gitea repositories with custom domains and automatic HTTPS

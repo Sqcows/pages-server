@@ -1,4 +1,4 @@
-# Forgejo Pages Server
+# Bovine Pages Server
 
 A Traefik middleware plugin that provides static site hosting for Forgejo and Gitea repositories, similar to GitHub Pages and GitLab Pages.
 

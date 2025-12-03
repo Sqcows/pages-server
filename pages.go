@@ -727,7 +727,7 @@ func (ps *PagesServer) serveDirectoryListing(rw http.ResponseWriter, req *http.R
             </tbody>
         </table>
         <footer>
-            Powered by Forgejo Pages Server
+            Powered by Bovine Pages Server
         </footer>
     </div>
 </body>

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Forgejo Pages Server - Cache Reaper Script
+Bovine Pages Server - Cache Reaper Script
 
 This script connects to Redis and removes stale domain mappings for repositories
 that no longer have a .pages file. It should be run periodically via cron.
@@ -199,7 +199,7 @@ class CacheReaper:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Forgejo Pages Server cache reaper - cleans up stale domain mappings"
+        description="Bovine Pages Server cache reaper - cleans up stale domain mappings"
     )
     parser.add_argument(
         "--redis-host",

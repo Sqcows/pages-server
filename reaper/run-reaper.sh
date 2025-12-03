@@ -1,5 +1,5 @@
 #!/bin/bash
-# Forgejo Pages Server - Cache Reaper Runner Script
+# Bovine Pages Server - Cache Reaper Runner Script
 #
 # This script makes it easier to run the reaper with environment variables.
 # Copy this file to run-reaper.sh and configure your settings below.
