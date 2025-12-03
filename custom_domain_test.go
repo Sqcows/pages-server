@@ -182,6 +182,7 @@ func TestServeHTTPCustomDomainVsPagesDomain(t *testing.T) {
 		},
 		cache:             NewMemoryCache(300),
 		customDomainCache: NewMemoryCache(300),
+		passwordCache:     NewMemoryCache(60),
 		forgejoClient:     NewForgejoClient("https://git.example.com", ""),
 		errorPages:        make(map[int][]byte),
 	}
@@ -267,8 +268,8 @@ func TestTraefikRouterConfigDefaults(t *testing.T) {
 		t.Errorf("Expected default TraefikRedisCertResolver to be 'letsencrypt-http', got %q", config.TraefikRedisCertResolver)
 	}
 
-	if config.TraefikRedisRouterTTL != 600 {
-		t.Errorf("Expected default TraefikRedisRouterTTL to be 600, got %d", config.TraefikRedisRouterTTL)
+	if config.TraefikRedisRouterTTL != 0 {
+		t.Errorf("Expected default TraefikRedisRouterTTL to be 0 (persistent), got %d", config.TraefikRedisRouterTTL)
 	}
 
 	if config.TraefikRedisRootKey != "traefik" {

@@ -21,8 +21,10 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -78,6 +80,11 @@ type Config struct {
 
 	// AuthSecretKey is the secret key for signing authentication cookies (required for cookie security)
 	AuthSecretKey string `json:"authSecretKey,omitempty"`
+
+	// EnableCustomDomainDNSVerification enables DNS TXT record verification for custom domains (default: false)
+	// When enabled, custom domains require a DNS TXT record with a hash of the repository name
+	// to prevent malicious users from claiming domains they don't own
+	EnableCustomDomainDNSVerification bool `json:"enableCustomDomainDNSVerification,omitempty"`
 }
 
 // CreateConfig creates and initializes the plugin configuration.
@@ -430,6 +437,32 @@ func (ps *PagesServer) registerCustomDomain(ctx context.Context, username, repos
 
 	// If custom domain is configured, register it
 	if pagesConfig.CustomDomain != "" {
+		// Perform DNS verification if enabled
+		if ps.config.EnableCustomDomainDNSVerification {
+			verified, err := ps.verifyCustomDomainDNS(pagesConfig.CustomDomain, username, repository)
+			if err != nil {
+				// DNS verification failed - log the error with details
+				expectedHash := generateDomainVerificationHash(username, repository)
+				fmt.Printf("ERROR: DNS verification failed for custom domain %s (repository: %s/%s): %v\n",
+					pagesConfig.CustomDomain, username, repository, err)
+				fmt.Printf("HINT: Add this DNS TXT record to %s:\n  bovine-pages-verification=%s\n",
+					pagesConfig.CustomDomain, expectedHash)
+				return
+			}
+			if !verified {
+				// DNS verification returned false without error (shouldn't happen, but handle gracefully)
+				expectedHash := generateDomainVerificationHash(username, repository)
+				fmt.Printf("ERROR: DNS verification failed for custom domain %s (repository: %s/%s)\n",
+					pagesConfig.CustomDomain, username, repository)
+				fmt.Printf("HINT: Add this DNS TXT record to %s:\n  bovine-pages-verification=%s\n",
+					pagesConfig.CustomDomain, expectedHash)
+				return
+			}
+			// DNS verification succeeded - log success
+			fmt.Printf("INFO: DNS verification successful for custom domain %s (repository: %s/%s)\n",
+				pagesConfig.CustomDomain, username, repository)
+		}
+
 		// Check if custom domain is already registered to a different repository
 		cacheKey := "custom_domain:" + pagesConfig.CustomDomain
 		if existingMapping, found := ps.customDomainCache.Get(cacheKey); found {
@@ -461,6 +494,52 @@ func (ps *PagesServer) registerCustomDomain(ctx context.Context, username, repos
 			fmt.Printf("Warning: failed to register Traefik router for %s: %v\n", pagesConfig.CustomDomain, err)
 		}
 	}
+}
+
+// generateDomainVerificationHash creates a SHA256 hash for domain verification.
+// The hash is computed from the full repository path (owner/repository).
+// This hash must be present in a DNS TXT record at the custom domain to prove ownership.
+func generateDomainVerificationHash(owner, repository string) string {
+	repoPath := owner + "/" + repository
+	hash := sha256.Sum256([]byte(repoPath))
+	return hex.EncodeToString(hash[:])
+}
+
+// verifyCustomDomainDNS verifies that a DNS TXT record exists at the custom domain
+// containing the correct verification hash for the repository.
+// Returns true if verification succeeds, false otherwise.
+// Errors are logged but don't cause the function to return an error - instead they return false.
+func (ps *PagesServer) verifyCustomDomainDNS(domain, owner, repository string) (bool, error) {
+	// Generate expected verification hash
+	expectedHash := generateDomainVerificationHash(owner, repository)
+	expectedValue := "bovine-pages-verification=" + expectedHash
+
+	// Lookup TXT records for the domain
+	txtRecords, err := net.LookupTXT(domain)
+	if err != nil {
+		// DNS lookup failed - could be timeout, NXDOMAIN, or other DNS error
+		return false, fmt.Errorf("DNS TXT lookup failed for %s: %w", domain, err)
+	}
+
+	// Check if any TXT record matches our expected verification value
+	for _, record := range txtRecords {
+		// Use constant-time comparison to prevent timing attacks
+		// Compare the full record value including the prefix
+		if subtle.ConstantTimeCompare([]byte(record), []byte(expectedValue)) == 1 {
+			return true, nil
+		}
+
+		// Also check if the record contains the hash with spaces or variations
+		// Some DNS providers may add/remove spaces
+		cleanRecord := strings.ReplaceAll(record, " ", "")
+		cleanExpected := strings.ReplaceAll(expectedValue, " ", "")
+		if subtle.ConstantTimeCompare([]byte(cleanRecord), []byte(cleanExpected)) == 1 {
+			return true, nil
+		}
+	}
+
+	// No matching TXT record found
+	return false, fmt.Errorf("DNS TXT record not found or incorrect for %s (expected: %s)", domain, expectedValue)
 }
 
 // registerTraefikRouter writes Traefik router configuration to Redis for automatic SSL certificate generation.

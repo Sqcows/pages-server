@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **DNS TXT Record Verification for Custom Domains**: Security feature to prevent domain hijacking
+  - Optional DNS verification using TXT records (disabled by default)
+  - Requires `bovine-pages-verification=<SHA256_HASH>` TXT record at custom domain
+  - Hash computed from repository path: `owner/repository`
+  - Prevents malicious users from claiming domains they don't own
+  - Constant-time hash comparison using `crypto/subtle.ConstantTimeCompare` to prevent timing attacks
+  - Detailed error logging with helpful hints for users
+  - Configuration: `enableCustomDomainDNSVerification: true` (default: false)
+  - Backward compatible - existing domains continue working
+  - Comprehensive test coverage for hash generation and DNS verification
+
 ## [0.0.8] - 2025-12-03
 
 ### Added

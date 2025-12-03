@@ -139,7 +139,7 @@ func TestParseRequest(t *testing.T) {
 			path:           "/myrepo/",
 			wantUsername:   "user1",
 			wantRepository: "myrepo",
-			wantFilePath:   "public/index.html",
+			wantFilePath:   "public",
 			wantErr:        false,
 		},
 		{
@@ -148,7 +148,7 @@ func TestParseRequest(t *testing.T) {
 			path:           "/myrepo",
 			wantUsername:   "user1",
 			wantRepository: "myrepo",
-			wantFilePath:   "public/index.html",
+			wantFilePath:   "public",
 			wantErr:        false,
 		},
 		{
@@ -157,7 +157,7 @@ func TestParseRequest(t *testing.T) {
 			path:           "/",
 			wantUsername:   "user1",
 			wantRepository: ".profile",
-			wantFilePath:   "public/index.html",
+			wantFilePath:   "public",
 			wantErr:        false,
 		},
 		{

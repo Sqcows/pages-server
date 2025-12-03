@@ -205,6 +205,7 @@ http:
 | `traefikRedisRootKey` | string | "traefik" | Redis root key for Traefik configuration |
 | `authCookieDuration` | int | 3600 | Authentication cookie validity in seconds (for password protection) |
 | `authSecretKey` | string | "" | Secret key for HMAC cookie signing (recommended for password protection security) |
+| `enableCustomDomainDNSVerification` | bool | false | Enable DNS TXT record verification for custom domains (prevents domain hijacking) |
 
 ## Custom Domains
 
@@ -287,6 +288,116 @@ The plugin uses a registration-based approach for custom domains:
    - Traefik requests SSL certificates via Let's Encrypt automatically
    - Serves your site with HTTPS
    - Handles certificate renewal
+
+### DNS Verification for Custom Domains (Security Feature)
+
+To prevent malicious users from claiming custom domains they don't own, you can enable DNS TXT record verification. When enabled, users must prove domain ownership by adding a DNS TXT record before the custom domain is registered.
+
+#### How DNS Verification Works
+
+1. **Generate Verification Hash**: When a user adds a `custom_domain` to their `.pages` file, they need to compute a SHA256 hash of their repository path (`owner/repository`).
+
+2. **Add DNS TXT Record**: The user must add a TXT record to their custom domain with the verification hash:
+   ```
+   TXT record: bovine-pages-verification=<SHA256_HASH>
+   ```
+
+3. **Verification on Registration**: When the user visits their pages URL to activate the custom domain, the plugin:
+   - Looks up TXT records for the custom domain
+   - Verifies that a record exists with the correct hash
+   - Only registers the domain if verification succeeds
+   - Logs helpful error messages if verification fails
+
+#### Enabling DNS Verification
+
+Add to your Traefik configuration:
+
+```yaml
+http:
+  middlewares:
+    pages-server:
+      plugin:
+        pages-server:
+          pagesDomain: pages.example.com
+          forgejoHost: https://git.example.com
+          enableCustomDomainDNSVerification: true  # Enable DNS verification
+```
+
+#### Example: Setting Up a Custom Domain with DNS Verification
+
+**Step 1: Compute the verification hash**
+
+```bash
+# For repository: squarecows/bovine-website
+echo -n "squarecows/bovine-website" | shasum -a 256
+# Output: f208d828f20d47c865802bb5c64c4b7832cd0f7fa974bc085f2d3e0a0a4b7c79
+```
+
+**Step 2: Add DNS TXT record**
+
+Add this TXT record to your custom domain (`www.example.com`):
+
+```
+TXT www.example.com bovine-pages-verification=f208d828f20d47c865802bb5c64c4b7832cd0f7fa974bc085f2d3e0a0a4b7c79
+```
+
+**Step 3: Add custom domain to `.pages` file**
+
+```yaml
+enabled: true
+custom_domain: www.example.com
+```
+
+**Step 4: Activate the custom domain**
+
+Visit `https://squarecows.pages.example.com/bovine-website` to register the domain. The plugin will:
+- Verify the DNS TXT record exists
+- Verify the hash matches
+- Register the custom domain
+- Log success or detailed error messages
+
+#### Verification Hash Format
+
+- **Input**: Full repository path in format `owner/repository`
+- **Algorithm**: SHA256
+- **Output**: 64-character hexadecimal hash
+- **TXT Record Format**: `bovine-pages-verification=<hash>`
+
+#### Security Benefits
+
+- **Prevents Domain Hijacking**: Users cannot claim domains they don't control
+- **Proof of Ownership**: DNS TXT record proves the user controls the domain
+- **Constant-Time Comparison**: Uses `crypto/subtle.ConstantTimeCompare` to prevent timing attacks
+- **Helpful Error Messages**: Clear logging helps users debug DNS configuration issues
+
+#### Backward Compatibility
+
+- **Default**: DNS verification is **disabled** by default (no breaking changes)
+- **Opt-in**: Administrators must explicitly enable it with `enableCustomDomainDNSVerification: true`
+- **Existing Domains**: Domains registered before enabling verification continue to work
+- **Migration**: Existing users need to add DNS TXT records only when re-registering domains
+
+#### Troubleshooting DNS Verification
+
+**Verification fails with "DNS TXT lookup failed":**
+- Wait for DNS propagation (can take up to 48 hours, usually 5-15 minutes)
+- Verify the TXT record exists: `dig TXT www.example.com`
+- Check that the record is visible from the server running Traefik
+
+**Verification fails with "TXT record not found or incorrect":**
+- Verify the hash is computed correctly: `echo -n "owner/repository" | shasum -a 256`
+- Check the TXT record format: `bovine-pages-verification=<hash>`
+- Ensure no extra spaces or newlines in the TXT record
+- Verify the repository name matches exactly (case-sensitive)
+
+**How to check what hash is expected:**
+
+Check the Traefik/plugin logs when attempting to register. The plugin logs:
+```
+ERROR: DNS verification failed for custom domain www.example.com (repository: owner/repo): ...
+HINT: Add this DNS TXT record to www.example.com:
+  bovine-pages-verification=<expected_hash>
+```
 
 ### Custom Domain Storage
 
