@@ -364,8 +364,9 @@ func (ps *PagesServer) parseRequest(req *http.Request) (username, repository, fi
 	// Check if this is a profile site (no repository in path)
 	if path == "" {
 		// Profile site root: $username.$domain/
+		// Use public (no trailing slash) to allow index.html or directory listing logic
 		repository = ".profile"
-		filePath = "public/index.html"
+		filePath = "public"
 		return username, repository, filePath, nil
 	}
 
@@ -382,8 +383,9 @@ func (ps *PagesServer) parseRequest(req *http.Request) (username, repository, fi
 			return username, repository, filePath, nil
 		}
 		// Repository root: $username.$domain/myrepo
+		// Use public (no trailing slash) so it can fall through to index.html or directory listing logic
 		repository = pathParts[0]
-		filePath = "public/index.html"
+		filePath = "public"
 		return username, repository, filePath, nil
 	}
 
