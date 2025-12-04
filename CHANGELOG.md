@@ -19,6 +19,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Backward compatible - existing domains continue working
   - Comprehensive test coverage for hash generation and DNS verification
 
+## [0.0.9] - 2025-12-04
+
+### Documentation
+- **Wiki: Cache Management Page**: Comprehensive guide for managing Redis/Valkey cache
+  - Cache key structure and formats
+  - Docker exec examples for redis-cli and valkey-cli
+  - Inspecting cache contents with SCAN and KEYS
+  - Flushing cache for specific websites (custom domains and pages domains)
+  - Common cache management tasks
+  - Troubleshooting cache issues
+  - Best practices for production
+  - Quick reference card with common commands
+- **Wiki: Quick Start Guide Enhancements**
+  - Complete Docker Compose setup instructions
+  - Standalone Traefik setup instructions
+  - Added Redis/Valkey provider configuration to traefik.yml examples
+  - Added prominent Redis/Valkey requirement section
+  - Architecture overview with Mermaid.js diagram
+  - Enhanced troubleshooting section
+  - Links to Traefik and Docker documentation
+- **Wiki: Custom Domains Documentation Updates**
+  - Added DNS TXT record verification flow documentation
+  - Split user setup flow into "Without DNS Verification" and "With DNS Verification"
+  - Detailed steps for generating and configuring DNS TXT records
+  - Verification examples with dig/nslookup
+  - Security benefits explanation
+- **Wiki: Home Page Improvements**
+  - Enhanced project description
+  - Rebranded to "Bovine Pages Server" throughout documentation
+  - Improved feature highlights and key capabilities
+  - Better organization of navigation links
+>>>>>>> 09fad9f (Release version 0.0.9 - Documentation improvements)
+
 ## [0.0.8] - 2025-12-03
 
 ### Added
@@ -363,7 +396,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Troubleshooting guide
 - API documentation in code comments
 
-[Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.8...HEAD
+[Unreleased]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.9...HEAD
+[0.0.9]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.8...v0.0.9
 [0.0.8]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.7...v0.0.8
 [0.0.7]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.6...v0.0.7
 [0.0.6]: https://code.squarecows.com/SquareCows/pages-server/compare/v0.0.5...v0.0.6
