@@ -93,16 +93,16 @@ func generateTraefikRedirectRegexMiddleware(customDomain string, rules []Redirec
 	configs := make(map[string]string)
 	domainSanitized := strings.ReplaceAll(customDomain, ".", "-")
 
-	// Generate redirectregex middleware configuration
+	// Generate redirectRegex middleware configuration
 	// See: https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/redirectregex/
 	for i, rule := range rules {
 		// Each redirect rule gets its own middleware instance
-		// Format: traefik/http/middlewares/{name}/redirectregex/{property}
+		// Format: traefik/http/middlewares/{name}/redirectRegex/{property}
 		middlewareName := fmt.Sprintf("redirects-%s-%d", domainSanitized, i)
 
-		regexKey := fmt.Sprintf("%s/http/middlewares/%s/redirectregex/regex", rootKey, middlewareName)
-		replacementKey := fmt.Sprintf("%s/http/middlewares/%s/redirectregex/replacement", rootKey, middlewareName)
-		permanentKey := fmt.Sprintf("%s/http/middlewares/%s/redirectregex/permanent", rootKey, middlewareName)
+		regexKey := fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/regex", rootKey, middlewareName)
+		replacementKey := fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/replacement", rootKey, middlewareName)
+		permanentKey := fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/permanent", rootKey, middlewareName)
 
 		// Build regex pattern for matching the "from" URL
 		// Escape special regex characters and match full path

@@ -252,14 +252,14 @@ func TestGenerateTraefikRedirectRegexMiddleware(t *testing.T) {
 			rootKey:   "traefik",
 			expectNil: false,
 			checkKeys: []string{
-				"traefik/http/middlewares/redirects-example-com-0/redirectregex/regex",
-				"traefik/http/middlewares/redirects-example-com-0/redirectregex/replacement",
-				"traefik/http/middlewares/redirects-example-com-0/redirectregex/permanent",
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/regex",
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/replacement",
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/permanent",
 			},
 			checkValues: map[string]string{
-				"traefik/http/middlewares/redirects-example-com-0/redirectregex/regex":       "^/old$",
-				"traefik/http/middlewares/redirects-example-com-0/redirectregex/replacement": "/new",
-				"traefik/http/middlewares/redirects-example-com-0/redirectregex/permanent":   "true",
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/regex":       "^/old$",
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/replacement": "/new",
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/permanent":   "true",
 			},
 		},
 		{
@@ -272,14 +272,14 @@ func TestGenerateTraefikRedirectRegexMiddleware(t *testing.T) {
 			rootKey:   "traefik",
 			expectNil: false,
 			checkKeys: []string{
-				"traefik/http/middlewares/redirects-test-example-com-0/redirectregex/regex",
-				"traefik/http/middlewares/redirects-test-example-com-1/redirectregex/regex",
+				"traefik/http/middlewares/redirects-test-example-com-0/redirectRegex/regex",
+				"traefik/http/middlewares/redirects-test-example-com-1/redirectRegex/regex",
 			},
 			checkValues: map[string]string{
-				"traefik/http/middlewares/redirects-test-example-com-0/redirectregex/regex":       "^/page1$",
-				"traefik/http/middlewares/redirects-test-example-com-0/redirectregex/replacement": "/page2",
-				"traefik/http/middlewares/redirects-test-example-com-1/redirectregex/regex":       "^/blog/old$",
-				"traefik/http/middlewares/redirects-test-example-com-1/redirectregex/replacement": "/blog/new",
+				"traefik/http/middlewares/redirects-test-example-com-0/redirectRegex/regex":       "^/page1$",
+				"traefik/http/middlewares/redirects-test-example-com-0/redirectRegex/replacement": "/page2",
+				"traefik/http/middlewares/redirects-test-example-com-1/redirectRegex/regex":       "^/blog/old$",
+				"traefik/http/middlewares/redirects-test-example-com-1/redirectRegex/replacement": "/blog/new",
 			},
 		},
 		{
@@ -291,7 +291,7 @@ func TestGenerateTraefikRedirectRegexMiddleware(t *testing.T) {
 			rootKey:   "traefik",
 			expectNil: false,
 			checkValues: map[string]string{
-				"traefik/http/middlewares/redirects-example-com-0/redirectregex/replacement": "https://newdomain.com/new",
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/replacement": "https://newdomain.com/new",
 			},
 		},
 		{
@@ -303,7 +303,7 @@ func TestGenerateTraefikRedirectRegexMiddleware(t *testing.T) {
 			rootKey:   "traefik",
 			expectNil: false,
 			checkValues: map[string]string{
-				"traefik/http/middlewares/redirects-example-com-0/redirectregex/replacement": "/new/",
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/replacement": "/new/",
 			},
 		},
 		{
@@ -322,7 +322,7 @@ func TestGenerateTraefikRedirectRegexMiddleware(t *testing.T) {
 			rootKey:   "traefik",
 			expectNil: false,
 			checkValues: map[string]string{
-				"traefik/http/middlewares/redirects-example-com-0/redirectregex/regex": `^/file\.html$`,
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/regex": `^/file\.html$`,
 			},
 		},
 	}
@@ -363,9 +363,9 @@ func TestGenerateTraefikRedirectRegexMiddleware(t *testing.T) {
 			for i := range tt.rules {
 				domainSanitized := strings.ReplaceAll(tt.customDomain, ".", "-")
 				middlewareName := fmt.Sprintf("redirects-%s-%d", domainSanitized, i)
-				regexKey := tt.rootKey + "/http/middlewares/" + middlewareName + "/redirectregex/regex"
-				replacementKey := tt.rootKey + "/http/middlewares/" + middlewareName + "/redirectregex/replacement"
-				permanentKey := tt.rootKey + "/http/middlewares/" + middlewareName + "/redirectregex/permanent"
+				regexKey := tt.rootKey + "/http/middlewares/" + middlewareName + "/redirectRegex/regex"
+				replacementKey := tt.rootKey + "/http/middlewares/" + middlewareName + "/redirectRegex/replacement"
+				permanentKey := tt.rootKey + "/http/middlewares/" + middlewareName + "/redirectRegex/permanent"
 
 				if _, exists := configs[regexKey]; !exists {
 					t.Errorf("Missing regex key for rule %d: %s", i, regexKey)
