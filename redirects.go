@@ -104,14 +104,24 @@ func generateTraefikRedirectRegexMiddleware(customDomain string, rules []Redirec
 		replacementKey := fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/replacement", rootKey, middlewareName)
 		permanentKey := fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/permanent", rootKey, middlewareName)
 
-		// Build regex pattern for matching the "from" URL
-		// Escape special regex characters and match full path
-		regexPattern := fmt.Sprintf("^/%s$", escapeRegex(rule.From))
+		// Build regex pattern and replacement based on redirect type
+		var regexPattern, replacement string
 
-		// Build replacement URL (with leading slash if not present)
-		replacement := rule.To
-		if !strings.HasPrefix(replacement, "/") && !strings.HasPrefix(replacement, "http://") && !strings.HasPrefix(replacement, "https://") {
-			replacement = "/" + replacement
+		// Check if this is an absolute URL redirect (external domain)
+		if strings.HasPrefix(rule.To, "http://") || strings.HasPrefix(rule.To, "https://") {
+			// For absolute URLs, match the full request URL and replace with the external URL
+			// Pattern: https?://[^/]+/path -> https://external.com
+			regexPattern = fmt.Sprintf("^https?://[^/]+/%s", escapeRegex(rule.From))
+			replacement = rule.To
+		} else {
+			// For relative URLs, match just the path
+			regexPattern = fmt.Sprintf("/%s", escapeRegex(rule.From))
+			// Add leading slash if not present
+			if !strings.HasPrefix(rule.To, "/") {
+				replacement = "/" + rule.To
+			} else {
+				replacement = rule.To
+			}
 		}
 
 		configs[regexKey] = regexPattern

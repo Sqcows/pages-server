@@ -257,7 +257,7 @@ func TestGenerateTraefikRedirectRegexMiddleware(t *testing.T) {
 				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/permanent",
 			},
 			checkValues: map[string]string{
-				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/regex":       "^/old$",
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/regex":       "/old",
 				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/replacement": "/new",
 				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/permanent":   "true",
 			},
@@ -276,9 +276,9 @@ func TestGenerateTraefikRedirectRegexMiddleware(t *testing.T) {
 				"traefik/http/middlewares/redirects-test-example-com-1/redirectRegex/regex",
 			},
 			checkValues: map[string]string{
-				"traefik/http/middlewares/redirects-test-example-com-0/redirectRegex/regex":       "^/page1$",
+				"traefik/http/middlewares/redirects-test-example-com-0/redirectRegex/regex":       "/page1",
 				"traefik/http/middlewares/redirects-test-example-com-0/redirectRegex/replacement": "/page2",
-				"traefik/http/middlewares/redirects-test-example-com-1/redirectRegex/regex":       "^/blog/old$",
+				"traefik/http/middlewares/redirects-test-example-com-1/redirectRegex/regex":       "/blog/old",
 				"traefik/http/middlewares/redirects-test-example-com-1/redirectRegex/replacement": "/blog/new",
 			},
 		},
@@ -291,6 +291,7 @@ func TestGenerateTraefikRedirectRegexMiddleware(t *testing.T) {
 			rootKey:   "traefik",
 			expectNil: false,
 			checkValues: map[string]string{
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/regex":       "^https?://[^/]+/old",
 				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/replacement": "https://newdomain.com/new",
 			},
 		},
@@ -322,7 +323,7 @@ func TestGenerateTraefikRedirectRegexMiddleware(t *testing.T) {
 			rootKey:   "traefik",
 			expectNil: false,
 			checkValues: map[string]string{
-				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/regex": `^/file\.html$`,
+				"traefik/http/middlewares/redirects-example-com-0/redirectRegex/regex": `/file\.html`,
 			},
 		},
 	}
