@@ -83,24 +83,26 @@ func parseRedirectsFile(content []byte, maxRedirects int) ([]RedirectRule, error
 // generateTraefikRedirectRegexMiddleware generates Traefik redirectregex middleware configuration
 // from redirect rules.
 // Returns a map of Redis keys to values for storing in Redis.
+// Note: Traefik's redirectregex middleware only supports ONE redirect per middleware instance.
+// For multiple redirects, we create multiple middleware instances.
 func generateTraefikRedirectRegexMiddleware(customDomain string, rules []RedirectRule, rootKey string) map[string]string {
 	if len(rules) == 0 {
 		return nil
 	}
 
-	// Create sanitized middleware name (replace dots with dashes)
-	middlewareName := "redirects-" + strings.ReplaceAll(customDomain, ".", "-")
-
 	configs := make(map[string]string)
+	domainSanitized := strings.ReplaceAll(customDomain, ".", "-")
 
 	// Generate redirectregex middleware configuration
 	// See: https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/redirectregex/
 	for i, rule := range rules {
-		// Each redirect rule gets its own set of regex/replacement/permanent keys
-		// Format: traefik/http/middlewares/{name}/redirectRegex/regex/{index}
-		regexKey := fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/regex/%d", rootKey, middlewareName, i)
-		replacementKey := fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/replacement/%d", rootKey, middlewareName, i)
-		permanentKey := fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/permanent/%d", rootKey, middlewareName, i)
+		// Each redirect rule gets its own middleware instance
+		// Format: traefik/http/middlewares/{name}/redirectregex/{property}
+		middlewareName := fmt.Sprintf("redirects-%s-%d", domainSanitized, i)
+
+		regexKey := fmt.Sprintf("%s/http/middlewares/%s/redirectregex/regex", rootKey, middlewareName)
+		replacementKey := fmt.Sprintf("%s/http/middlewares/%s/redirectregex/replacement", rootKey, middlewareName)
+		permanentKey := fmt.Sprintf("%s/http/middlewares/%s/redirectregex/permanent", rootKey, middlewareName)
 
 		// Build regex pattern for matching the "from" URL
 		// Escape special regex characters and match full path
@@ -156,11 +158,57 @@ func (ps *PagesServer) storeRedirectMiddleware(customDomain string, rules []Redi
 	}
 
 	// Store metadata about redirect count for this domain
-	middlewareName := "redirects-" + strings.ReplaceAll(customDomain, ".", "-")
 	metadataKey := fmt.Sprintf("redirects_meta:%s", customDomain)
-	metadataValue := fmt.Sprintf("middleware=%s,count=%d", middlewareName, len(rules))
+	metadataValue := fmt.Sprintf("count=%d", len(rules))
 	if err := redisCache.SetWithTTL(metadataKey, []byte(metadataValue), 0); err != nil {
 		return fmt.Errorf("failed to write redirect metadata: %w", err)
+	}
+
+	// Update the router to include all redirect middleware instances
+	if err := ps.updateRouterMiddlewares(customDomain, len(rules)); err != nil {
+		return fmt.Errorf("failed to update router middlewares: %w", err)
+	}
+
+	return nil
+}
+
+// updateRouterMiddlewares updates the Traefik router configuration to include all redirect middlewares.
+// The redirect middlewares must be first in the chain so redirects are processed before pages-server.
+func (ps *PagesServer) updateRouterMiddlewares(customDomain string, redirectCount int) error {
+	// Only write if we have a working Redis cache
+	redisCache, ok := ps.customDomainCache.(*RedisCache)
+	if !ok {
+		return fmt.Errorf("Redis cache required for router middleware update")
+	}
+
+	// Create sanitized router name (same as in registerTraefikRouter)
+	routerName := "custom-" + strings.ReplaceAll(customDomain, ".", "-")
+	rootKey := ps.config.TraefikRedisRootKey
+	domainSanitized := strings.ReplaceAll(customDomain, ".", "-")
+
+	middlewareConfigs := make(map[string]string)
+	middlewareIndex := 0
+
+	// Add all redirect middlewares first (they process in order)
+	for i := 0; i < redirectCount; i++ {
+		middlewareName := fmt.Sprintf("redirects-%s-%d", domainSanitized, i)
+		// Format: middlewareName@redis (since middleware is stored in Redis)
+		middlewareRef := middlewareName + "@redis"
+		key := fmt.Sprintf("%s/http/routers/%s/middlewares/%d", rootKey, routerName, middlewareIndex)
+		middlewareConfigs[key] = middlewareRef
+		middlewareIndex++
+	}
+
+	// Add pages-server middleware last
+	pagesMiddlewareRef := "pages-server@file"
+	key := fmt.Sprintf("%s/http/routers/%s/middlewares/%d", rootKey, routerName, middlewareIndex)
+	middlewareConfigs[key] = pagesMiddlewareRef
+
+	// Write each middleware config key with same TTL as router
+	for key, value := range middlewareConfigs {
+		if err := redisCache.SetWithTTL(key, []byte(value), ps.config.TraefikRedisRouterTTL); err != nil {
+			return fmt.Errorf("failed to write router middleware config key %s: %w", key, err)
+		}
 	}
 
 	return nil
