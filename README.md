@@ -9,6 +9,7 @@ A Traefik middleware plugin that provides static site hosting for Forgejo and Gi
 - **ACME Challenge Passthrough**: Automatic handling of Let's Encrypt HTTP challenges for SSL certificate generation
 - **HTTP to HTTPS Redirect**: Automatic redirection from HTTP to HTTPS (with ACME challenge exceptions)
 - **Custom Domains**: Support for custom domains with manual DNS configuration and automatic SSL certificate provisioning
+- **URL Redirects**: 301 permanent redirects for custom domains via `.redirects` file - supports both relative and absolute URLs
 - **Password Protection**: Protect websites with SHA256-hashed passwords and secure HMAC-signed cookies
 - **Directory Index Support**: Automatic `index.html` detection for directory URLs (e.g., `/pricing/` → `/pricing/index.html`)
 - **Directory Listings**: Optional Apache-style directory listings for directories without index.html (configurable per-repository)
