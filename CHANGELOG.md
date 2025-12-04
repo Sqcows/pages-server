@@ -18,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configuration: `enableCustomDomainDNSVerification: true` (default: false)
   - Backward compatible - existing domains continue working
   - Comprehensive test coverage for hash generation and DNS verification
+- **Custom Domain Redirects**: URL redirect system for custom domains
+  - `.redirects` file support in repository root
+  - Format: `FROM:TO` (one redirect per line)
+  - Special endpoint: `/LOAD_REDIRECTS` to activate redirects
+  - Creates Traefik `redirectregex` middleware automatically
+  - Stores middleware configuration in Redis persistently
+  - Configurable `maxRedirects` parameter (default: 25) for resource exhaustion protection
+  - Supports comments (lines starting with `#`) and empty lines
+  - Automatic regex character escaping for special characters
+  - Permanent (301) redirects for all rules
+  - Only works on custom domains (not pages domain URLs)
+  - Requires Redis cache for middleware storage
+  - Beautiful HTML success/error pages with detailed instructions
+  - Comprehensive test coverage (>90% for redirects module)
 
 ## [0.0.9] - 2025-12-04
 

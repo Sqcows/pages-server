@@ -206,6 +206,134 @@ http:
 | `authCookieDuration` | int | 3600 | Authentication cookie validity in seconds (for password protection) |
 | `authSecretKey` | string | "" | Secret key for HMAC cookie signing (recommended for password protection security) |
 | `enableCustomDomainDNSVerification` | bool | false | Enable DNS TXT record verification for custom domains (prevents domain hijacking) |
+| `maxRedirects` | int | 25 | Maximum number of redirect rules to read from `.redirects` file (resource exhaustion protection) |
+
+## Custom Domain Redirects
+
+Custom domains can use a `.redirects` file to configure URL redirects. This feature is only available for custom domains (not standard pages domain URLs).
+
+### How Redirects Work
+
+1. **Create `.redirects` file**: Add a `.redirects` file in your repository root with redirect rules
+2. **Format**: One redirect per line in the format `FROM:TO`
+3. **Load redirects**: Visit `https://your-custom-domain.com/LOAD_REDIRECTS` to activate redirects
+4. **Traefik middleware**: The plugin creates Traefik `redirectregex` middleware automatically
+5. **Permanent redirects**: All redirects are 301 (permanent) redirects
+
+### .redirects File Format
+
+```
+# Comments start with #
+# Format: FROM:TO (one per line)
+
+# Simple redirects
+old-page:new-page
+index.html:home/
+
+# Path redirects
+blog/old-post:blog/new-post
+about.html:company/about
+
+# External redirects
+legacy:https://example.com/new-site
+old-domain:https://newdomain.com/
+```
+
+### Configuration
+
+Add the `maxRedirects` parameter to your Traefik configuration:
+
+```yaml
+http:
+  middlewares:
+    pages-server:
+      plugin:
+        pages-server:
+          pagesDomain: pages.example.com
+          forgejoHost: https://git.example.com
+          maxRedirects: 25  # Maximum redirect rules to read (default: 25)
+```
+
+### Loading Redirects
+
+After creating or updating your `.redirects` file:
+
+1. Commit and push the changes to your repository
+2. Visit `https://your-custom-domain.com/LOAD_REDIRECTS`
+3. The plugin will read your `.redirects` file and create Traefik middleware
+4. Redirects become active within a few seconds
+
+### Redirect Rules
+
+- **FROM**: Source URL path (without leading slash)
+- **TO**: Destination URL path or full URL
+  - Relative paths: `new-page` → `/new-page`
+  - Absolute paths: `/new-page` → `/new-page`
+  - External URLs: `https://example.com/page` → `https://example.com/page`
+- **Regex escaping**: Special characters (`.`, `?`, `*`, etc.) are automatically escaped
+- **Max redirects**: Limited by `maxRedirects` config (default: 25) for resource exhaustion protection
+
+### Example
+
+**Repository structure:**
+```
+my-website/
+├── .pages                 # Enable pages and set custom domain
+├── .redirects             # Redirect rules
+└── public/
+    ├── index.html
+    ├── new-page.html
+    └── blog/
+        └── new-post.html
+```
+
+**.pages file:**
+```yaml
+enabled: true
+custom_domain: www.example.com
+```
+
+**.redirects file:**
+```
+# Redirect old URLs to new structure
+old-home:index.html
+about.html:company/about
+blog/2023/old-post:blog/new-post
+legacy:https://newsite.com/
+```
+
+**Activate redirects:**
+Visit `https://www.example.com/LOAD_REDIRECTS`
+
+### Security and Limitations
+
+- **Custom domains only**: Redirects only work on custom domains, not standard pages domain URLs
+- **Requires .pages file**: Repository must have `.pages` file with `custom_domain` configured
+- **Resource limits**: `maxRedirects` prevents resource exhaustion from large redirect files
+- **Redis required**: Redirect middleware requires Redis cache for storage
+- **Persistent storage**: Redirect rules persist until manually reloaded
+
+### Troubleshooting
+
+**Redirects not working:**
+1. Verify you're using a custom domain (not pages domain URL)
+2. Check that `.pages` file has `custom_domain` configured
+3. Visit `/LOAD_REDIRECTS` endpoint to activate redirects
+4. Wait a few seconds for Traefik to load the middleware
+5. Check Redis cache for middleware configuration
+
+**Error: "Custom domain not configured":**
+- Ensure `.pages` file has `custom_domain: yourdomain.com`
+- Visit your pages URL first to register the custom domain
+
+**Error: "Redirects file not found":**
+- Create `.redirects` file in repository root (not in `public/` folder)
+- Commit and push the file to Forgejo
+
+**Error: "Invalid .redirects file":**
+- Check file format: `FROM:TO` (one per line)
+- Verify no empty source or destination URLs
+- Check that maxRedirects limit isn't exceeded
 
 ## Custom Domains
 

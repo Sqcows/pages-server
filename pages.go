@@ -85,6 +85,10 @@ type Config struct {
 	// When enabled, custom domains require a DNS TXT record with a hash of the repository name
 	// to prevent malicious users from claiming domains they don't own
 	EnableCustomDomainDNSVerification bool `json:"enableCustomDomainDNSVerification,omitempty"`
+
+	// MaxRedirects is the maximum number of redirect rules to read from .redirects file (default: 25)
+	// Limits resource exhaustion from extremely large redirect files
+	MaxRedirects int `json:"maxRedirects,omitempty"`
 }
 
 // CreateConfig creates and initializes the plugin configuration.
@@ -99,6 +103,7 @@ func CreateConfig() *Config {
 		TraefikRedisRouterTTL:     0, // Persistent - cleaned by reaper
 		TraefikRedisRootKey:       "traefik",
 		AuthCookieDuration:        3600, // 1 hour
+		MaxRedirects:              25,   // Default max redirects
 	}
 }
 
@@ -189,6 +194,13 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// These requests come from Let's Encrypt's validation servers to verify domain ownership.
 	if strings.HasPrefix(req.URL.Path, "/.well-known/acme-challenge/") {
 		ps.next.ServeHTTP(rw, req)
+		return
+	}
+
+	// Handle /LOAD_REDIRECTS endpoint for custom domains
+	// This endpoint reads .redirects file and creates Traefik middleware
+	if req.URL.Path == "/LOAD_REDIRECTS" {
+		ps.handleLoadRedirects(rw, req)
 		return
 	}
 
