@@ -1,4 +1,5 @@
 displayName: Bovine Pages Server
+iconPath: .assets/icon.png
 type: middleware
 import: github.com/sqcows/pages-server
 summary: Static site hosting for Forgejo/Gitea repositories with custom domains and automatic HTTPS

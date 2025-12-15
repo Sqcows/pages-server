@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2025-12-15
+
+### Added
+- **Plugin Icon for Traefik Plugin Catalog**: Added visual branding to improve plugin identification
+  - Added `.assets/icon.png` with SquareCows logo for plugin catalog display
+  - Added `iconPath` configuration to `.traefik.yml` pointing to plugin icon
+  - Enhances plugin visibility and recognition in Traefik Plugin Catalog
+  - Uses official SquareCows branding (black text cutout logo)
+
 ## [0.1.3] - 2025-12-15
 
 ### Changed
@@ -433,7 +442,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Troubleshooting guide
 - API documentation in code comments
 
-[Unreleased]: https://github.com/sqcows/pages-server/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/sqcows/pages-server/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/sqcows/pages-server/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/sqcows/pages-server/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/sqcows/pages-server/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/sqcows/pages-server/compare/v0.0.9...v0.1.1
