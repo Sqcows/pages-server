@@ -80,7 +80,7 @@ This project is licensed under the GNU General Public License v3.0 (GPLv3). All 
 Current version: v0.0.6
 
 ### Repository
-https://code.squarecows.com/SquareCows/pages-server
+https://github.com/sqcows/pages-server
 
 ### Branching Strategy
 Feature branches

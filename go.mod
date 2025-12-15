@@ -1,4 +1,4 @@
-module code.squarecows.com/SquareCows/pages-server
+module github.com/sqcows/pages-server
 
 go 1.23
 

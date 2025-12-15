@@ -85,8 +85,8 @@ Add the plugin to your Traefik static configuration (`traefik.yml` or command li
 experimental:
   plugins:
     pages-server:
-      moduleName: code.squarecows.com/SquareCows/pages-server
-      version: v0.0.3
+      moduleName: github.com/sqcows/pages-server
+      version: v0.1.2
 ```
 
 ### 2. Configure Let's Encrypt (ACME)

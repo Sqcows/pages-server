@@ -1,6 +1,6 @@
 displayName: Bovine Pages Server
 type: middleware
-import: code.squarecows.com/SquareCows/pages-server
+import: github.com/sqcows/pages-server
 summary: Static site hosting for Forgejo/Gitea repositories with custom domains and automatic HTTPS
 testData:
   pagesDomain: pages.example.com
