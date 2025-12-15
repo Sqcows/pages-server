@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2025-12-15
+
+### Changed
+- **Removed External Dependencies**: Removed unused external dependency (`github.com/go-acme/lego/v4`) from `go.mod`
+  - Ensures full compliance with Traefik plugin requirements (standard library only)
+  - Plugin now exclusively uses Go standard library packages
+  - No functional changes to plugin behavior
+  - Reduces potential security surface and dependency management overhead
+  - Improves plugin compatibility with Traefik's Yaegi interpreter
+
 ## [0.1.2] - 2025-12-15
 
 ### Changed
@@ -423,7 +433,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Troubleshooting guide
 - API documentation in code comments
 
-[Unreleased]: https://github.com/sqcows/pages-server/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/sqcows/pages-server/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/sqcows/pages-server/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/sqcows/pages-server/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/sqcows/pages-server/compare/v0.0.9...v0.1.1
 [0.0.9]: https://github.com/sqcows/pages-server/compare/v0.0.8...v0.0.9
