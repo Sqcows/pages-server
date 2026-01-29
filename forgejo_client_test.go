@@ -395,6 +395,320 @@ func TestBase64Decode(t *testing.T) {
 	}
 }
 
+// TestParseInlineArray tests the parseInlineArray function for enable_branches parsing.
+func TestParseInlineArray(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "empty brackets",
+			input:    "[]",
+			expected: []string{},
+		},
+		{
+			name:     "single item",
+			input:    "[stage]",
+			expected: []string{"stage"},
+		},
+		{
+			name:     "multiple items",
+			input:    "[stage, qa]",
+			expected: []string{"stage", "qa"},
+		},
+		{
+			name:     "quoted items",
+			input:    `["stage", "qa"]`,
+			expected: []string{"stage", "qa"},
+		},
+		{
+			name:     "single quoted items",
+			input:    "['stage', 'qa']",
+			expected: []string{"stage", "qa"},
+		},
+		{
+			name:     "mixed quotes",
+			input:    `["stage", 'qa', dev]`,
+			expected: []string{"stage", "qa", "dev"},
+		},
+		{
+			name:     "with spaces",
+			input:    "[  stage  ,  qa  ]",
+			expected: []string{"stage", "qa"},
+		},
+		{
+			name:     "branch with slash",
+			input:    "[feature/new-ui, release/v1]",
+			expected: []string{"feature/new-ui", "release/v1"},
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseInlineArray(tt.input)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d items, got %d: %v", len(tt.expected), len(result), result)
+				return
+			}
+
+			for i, expected := range tt.expected {
+				if result[i] != expected {
+					t.Errorf("Item %d: expected %q, got %q", i, expected, result[i])
+				}
+			}
+		})
+	}
+}
+
+// TestGetPagesConfigWithEnableBranches tests parsing enable_branches from .pages file.
+func TestGetPagesConfigWithEnableBranches(t *testing.T) {
+	tests := []struct {
+		name            string
+		pagesContent    string
+		expectedDomain  string
+		expectedEnabled bool
+		expectedBranches []string
+	}{
+		{
+			name: "inline array format",
+			pagesContent: `enabled: true
+custom_domain: example.com
+enable_branches: ["stage", "qa"]
+`,
+			expectedDomain:   "example.com",
+			expectedEnabled:  true,
+			expectedBranches: []string{"stage", "qa"},
+		},
+		{
+			name: "multiline array format",
+			pagesContent: `enabled: true
+custom_domain: example.com
+enable_branches:
+  - stage
+  - qa
+  - dev
+`,
+			expectedDomain:   "example.com",
+			expectedEnabled:  true,
+			expectedBranches: []string{"stage", "qa", "dev"},
+		},
+		{
+			name: "no enable_branches",
+			pagesContent: `enabled: true
+custom_domain: example.com
+`,
+			expectedDomain:   "example.com",
+			expectedEnabled:  true,
+			expectedBranches: []string{},
+		},
+		{
+			name: "empty enable_branches",
+			pagesContent: `enabled: true
+enable_branches: []
+`,
+			expectedDomain:   "",
+			expectedEnabled:  true,
+			expectedBranches: []string{},
+		},
+		{
+			name: "single branch inline",
+			pagesContent: `enabled: true
+custom_domain: bovine.example.com
+enable_branches: [staging]
+`,
+			expectedDomain:   "bovine.example.com",
+			expectedEnabled:  true,
+			expectedBranches: []string{"staging"},
+		},
+		{
+			name: "branch names with special characters",
+			pagesContent: `enabled: true
+custom_domain: example.com
+enable_branches:
+  - feature/new-ui
+  - release_v1.0
+  - hotfix-123
+`,
+			expectedDomain:   "example.com",
+			expectedEnabled:  true,
+			expectedBranches: []string{"feature/new-ui", "release_v1.0", "hotfix-123"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			encodedContent := base64Encode([]byte(tt.pagesContent))
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/v1/repos/testuser/testrepo" {
+					repo := RepositoryInfo{
+						Name:          "testrepo",
+						FullName:      "testuser/testrepo",
+						Private:       false,
+						DefaultBranch: "main",
+					}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(repo)
+					return
+				}
+
+				if r.URL.Path == "/api/v1/repos/testuser/testrepo/contents/.pages" {
+					fileContent := FileContent{
+						Type:     "file",
+						Encoding: "base64",
+						Content:  encodedContent,
+						Size:     len(tt.pagesContent),
+						Name:     ".pages",
+						Path:     ".pages",
+					}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(fileContent)
+					return
+				}
+
+				w.WriteHeader(http.StatusNotFound)
+			}))
+			defer server.Close()
+
+			client := NewForgejoClient(server.URL, "test-token")
+			config, err := client.GetPagesConfig(context.Background(), "testuser", "testrepo")
+
+			if err != nil {
+				t.Fatalf("GetPagesConfig failed: %v", err)
+			}
+
+			if config.CustomDomain != tt.expectedDomain {
+				t.Errorf("Expected CustomDomain %q, got %q", tt.expectedDomain, config.CustomDomain)
+			}
+
+			if config.Enabled != tt.expectedEnabled {
+				t.Errorf("Expected Enabled %v, got %v", tt.expectedEnabled, config.Enabled)
+			}
+
+			if len(config.EnableBranches) != len(tt.expectedBranches) {
+				t.Errorf("Expected %d branches, got %d: %v", len(tt.expectedBranches), len(config.EnableBranches), config.EnableBranches)
+				return
+			}
+
+			for i, expected := range tt.expectedBranches {
+				if config.EnableBranches[i] != expected {
+					t.Errorf("Branch %d: expected %q, got %q", i, expected, config.EnableBranches[i])
+				}
+			}
+		})
+	}
+}
+
+// TestGetBranch tests the GetBranch method.
+func TestGetBranch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/repos/testuser/testrepo/branches/main" {
+			branch := BranchInfo{
+				Name: "main",
+			}
+			branch.Commit.ID = "abc123"
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(branch)
+			return
+		}
+
+		if r.URL.Path == "/api/v1/repos/testuser/testrepo/branches/feature%2Fnew-ui" ||
+			r.URL.Path == "/api/v1/repos/testuser/testrepo/branches/feature/new-ui" {
+			branch := BranchInfo{
+				Name: "feature/new-ui",
+			}
+			branch.Commit.ID = "def456"
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(branch)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewForgejoClient(server.URL, "test-token")
+
+	// Test existing branch
+	branch, err := client.GetBranch(context.Background(), "testuser", "testrepo", "main")
+	if err != nil {
+		t.Fatalf("GetBranch failed: %v", err)
+	}
+	if branch.Name != "main" {
+		t.Errorf("Expected branch name %q, got %q", "main", branch.Name)
+	}
+
+	// Test non-existent branch
+	_, err = client.GetBranch(context.Background(), "testuser", "testrepo", "nonexistent")
+	if err == nil {
+		t.Error("Expected error for non-existent branch, got nil")
+	}
+}
+
+// TestGetFileContentFromBranch tests the GetFileContentFromBranch method.
+func TestGetFileContentFromBranch(t *testing.T) {
+	testContent := "Hello from staging branch!"
+	encodedContent := base64Encode([]byte(testContent))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if ref parameter is present
+		ref := r.URL.Query().Get("ref")
+
+		if r.URL.Path == "/api/v1/repos/testuser/testrepo/contents/public/index.html" {
+			fileContent := FileContent{
+				Type:     "file",
+				Encoding: "base64",
+				Size:     len(testContent),
+				Name:     "index.html",
+				Path:     "public/index.html",
+			}
+
+			if ref == "staging" {
+				fileContent.Content = encodedContent
+			} else if ref == "" {
+				fileContent.Content = base64Encode([]byte("Hello from default branch!"))
+			} else {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(fileContent)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewForgejoClient(server.URL, "test-token")
+
+	// Test with specific branch
+	content, _, err := client.GetFileContentFromBranch(context.Background(), "testuser", "testrepo", "public/index.html", "staging")
+	if err != nil {
+		t.Fatalf("GetFileContentFromBranch failed: %v", err)
+	}
+	if string(content) != testContent {
+		t.Errorf("Expected content %q, got %q", testContent, string(content))
+	}
+
+	// Test with empty branch (default branch)
+	content, _, err = client.GetFileContentFromBranch(context.Background(), "testuser", "testrepo", "public/index.html", "")
+	if err != nil {
+		t.Fatalf("GetFileContentFromBranch with empty branch failed: %v", err)
+	}
+	if string(content) != "Hello from default branch!" {
+		t.Errorf("Expected default branch content, got %q", string(content))
+	}
+}
+
 // Helper function to encode base64 for tests.
 func base64Encode(data []byte) string {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"

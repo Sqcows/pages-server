@@ -239,8 +239,8 @@ func (ps *PagesServer) handleLoadRedirects(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
-	// Resolve custom domain to repository
-	username, repository, err := ps.resolveCustomDomain(req.Context(), host)
+	// Resolve custom domain to repository (branch is ignored for redirects)
+	username, repository, _, err := ps.resolveCustomDomain(req.Context(), host)
 	if err != nil {
 		ps.serveError(rw, http.StatusNotFound, "Custom domain not configured. Please visit your pages URL to register your custom domain first.")
 		return

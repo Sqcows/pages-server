@@ -239,7 +239,7 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		host = host[:colonIdx]
 	}
 
-	var username, repository, filePath string
+	var username, repository, filePath, branch string
 	var err error
 
 	// Check if this is a pagesDomain request
@@ -250,9 +250,11 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			ps.serveError(rw, http.StatusBadRequest, "Invalid request format")
 			return
 		}
+		// Standard pages domain requests always use the default branch
+		branch = ""
 	} else if ps.config.EnableCustomDomains {
-		// This might be a custom domain request
-		username, repository, err = ps.resolveCustomDomain(req.Context(), host)
+		// This might be a custom domain request (possibly a branch subdomain)
+		username, repository, branch, err = ps.resolveCustomDomain(req.Context(), host)
 		if err != nil {
 			ps.serveError(rw, http.StatusNotFound, "Custom domain not configured")
 			return
@@ -304,8 +306,8 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		// User is authenticated, continue to serve content
 	}
 
-	// Check cache first
-	cacheKey := fmt.Sprintf("%s:%s:%s", username, repository, filePath)
+	// Check cache first (include branch in cache key for branch-specific content)
+	cacheKey := fmt.Sprintf("%s:%s:%s:%s", username, repository, branch, filePath)
 	if cached, found := ps.cache.Get(cacheKey); found {
 		ps.serveContent(rw, filePath, cached, "HIT")
 		return
@@ -318,13 +320,13 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Get the file content from Forgejo
-	content, contentType, err := ps.forgejoClient.GetFileContent(req.Context(), username, repository, filePath)
+	// Get the file content from Forgejo (use branch-aware method)
+	content, contentType, err := ps.forgejoClient.GetFileContentFromBranch(req.Context(), username, repository, filePath, branch)
 	if err != nil {
 		// If file not found and path doesn't end with a file extension, try index.html
 		if !hasFileExtension(filePath) {
 			indexPath := filePath + "/index.html"
-			indexContent, indexContentType, indexErr := ps.forgejoClient.GetFileContent(req.Context(), username, repository, indexPath)
+			indexContent, indexContentType, indexErr := ps.forgejoClient.GetFileContentFromBranch(req.Context(), username, repository, indexPath, branch)
 			if indexErr == nil {
 				// Found index.html in directory
 				content = indexContent
@@ -335,8 +337,8 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				// Check if directory_index is enabled for directory listing
 				pagesConfig, configErr := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
 				if configErr == nil && pagesConfig.DirectoryIndex {
-					// Try to list directory contents
-					entries, listErr := ps.forgejoClient.ListDirectory(req.Context(), username, repository, filePath)
+					// Try to list directory contents (branch-aware)
+					entries, listErr := ps.forgejoClient.ListDirectoryFromBranch(req.Context(), username, repository, filePath, branch)
 					if listErr == nil && len(entries) > 0 {
 						// Serve directory listing
 						ps.serveDirectoryListing(rw, req, username, repository, filePath, entries)
@@ -438,25 +440,30 @@ func (ps *PagesServer) parseRequest(req *http.Request) (username, repository, fi
 	return username, repository, filePath, nil
 }
 
-// resolveCustomDomain resolves a custom domain to a username and repository.
+// resolveCustomDomain resolves a custom domain to a username, repository, and optional branch.
 // It checks the cache only - custom domains must be registered by visiting the pages URL first.
-func (ps *PagesServer) resolveCustomDomain(ctx context.Context, domain string) (username, repository string, err error) {
+// The branch is returned for branch subdomains (e.g., stage.example.com -> stage branch).
+func (ps *PagesServer) resolveCustomDomain(ctx context.Context, domain string) (username, repository, branch string, err error) {
 	// Check cache for registered custom domain
 	cacheKey := "custom_domain:" + domain
 	if cached, found := ps.customDomainCache.Get(cacheKey); found {
-		// Parse cached value "username:repository"
+		// Parse cached value "username:repository" or "username:repository:branch"
 		parts := strings.Split(string(cached), ":")
 		if len(parts) == 2 {
-			return parts[0], parts[1], nil
+			return parts[0], parts[1], "", nil
+		}
+		if len(parts) == 3 {
+			return parts[0], parts[1], parts[2], nil
 		}
 	}
 
 	// Custom domain not registered
-	return "", "", fmt.Errorf("custom domain not registered - visit the pages URL to activate")
+	return "", "", "", fmt.Errorf("custom domain not registered - visit the pages URL to activate")
 }
 
 // registerCustomDomain registers a custom domain by reading the .pages file and caching the mapping.
 // This is called when serving content from a pagesDomain request.
+// It also registers branch subdomains if enable_branches is configured.
 func (ps *PagesServer) registerCustomDomain(ctx context.Context, username, repository string) {
 	// Get the .pages configuration
 	pagesConfig, err := ps.forgejoClient.GetPagesConfig(ctx, username, repository)
@@ -523,7 +530,132 @@ func (ps *PagesServer) registerCustomDomain(ctx context.Context, username, repos
 			// The custom domain will still work, just won't get automatic SSL until next visit
 			fmt.Printf("Warning: failed to register Traefik router for %s: %v\n", pagesConfig.CustomDomain, err)
 		}
+
+		// Register branch subdomains if enable_branches is configured
+		ps.registerBranchSubdomains(ctx, username, repository, pagesConfig.CustomDomain, pagesConfig.EnableBranches)
+	} else if len(pagesConfig.EnableBranches) > 0 {
+		// Warn if enable_branches is configured without custom_domain
+		fmt.Printf("WARNING: enable_branches is configured for %s/%s but custom_domain is not set. Branch subdomains require a custom domain.\n",
+			username, repository)
 	}
+}
+
+// registerBranchSubdomains registers branch-specific subdomains for a custom domain.
+// For example, with custom_domain "example.com" and enable_branches ["stage", "qa"],
+// this registers stage.example.com and qa.example.com to serve from those branches.
+func (ps *PagesServer) registerBranchSubdomains(ctx context.Context, username, repository, customDomain string, branches []string) {
+	if len(branches) == 0 {
+		return
+	}
+
+	for _, branch := range branches {
+		// Sanitize branch name for subdomain (replace invalid characters)
+		sanitizedBranch := sanitizeBranchForSubdomain(branch)
+		if sanitizedBranch == "" {
+			fmt.Printf("WARNING: Branch name '%s' cannot be sanitized for subdomain, skipping\n", branch)
+			continue
+		}
+
+		// Construct the branch subdomain
+		branchDomain := sanitizedBranch + "." + customDomain
+
+		// Check if the branch exists in the repository
+		_, err := ps.forgejoClient.GetBranch(ctx, username, repository, branch)
+		if err != nil {
+			fmt.Printf("WARNING: Branch '%s' not found in repository %s/%s, skipping subdomain registration: %v\n",
+				branch, username, repository, err)
+			continue
+		}
+
+		// Check if branch subdomain conflicts with an existing domain registration
+		branchCacheKey := "custom_domain:" + branchDomain
+		if existingMapping, found := ps.customDomainCache.Get(branchCacheKey); found {
+			existingRepo := string(existingMapping)
+			// Expected format for branch domains: "username:repository:branch"
+			currentRepo := username + ":" + repository + ":" + branch
+
+			if existingRepo != currentRepo {
+				fmt.Printf("ERROR: Branch subdomain %s is already registered to %s, cannot register to %s\n",
+					branchDomain, existingRepo, currentRepo)
+				continue
+			}
+			// Branch subdomain is already registered to this repository/branch, continue to update
+		}
+
+		// Forward mapping: custom_domain:branchDomain -> username:repository:branch
+		cacheValue := username + ":" + repository + ":" + branch
+		ps.customDomainCache.Set(branchCacheKey, []byte(cacheValue))
+
+		// Reverse mapping for branch: username:repository:branch:branchName -> branchDomain
+		// This allows looking up the branch subdomain from the repository/branch
+		reverseCacheKey := username + ":" + repository + ":branch:" + branch
+		ps.customDomainCache.Set(reverseCacheKey, []byte(branchDomain))
+
+		// Register Traefik router for the branch subdomain
+		if err := ps.registerTraefikRouter(ctx, branchDomain); err != nil {
+			fmt.Printf("Warning: failed to register Traefik router for branch subdomain %s: %v\n", branchDomain, err)
+		}
+
+		fmt.Printf("INFO: Registered branch subdomain %s -> %s/%s (branch: %s)\n",
+			branchDomain, username, repository, branch)
+	}
+}
+
+// sanitizeBranchForSubdomain converts a git branch name to a valid subdomain label.
+// Rules:
+// - Replace "/" with "-" (feature/new-ui -> feature-new-ui)
+// - Replace "_" with "-" (my_branch -> my-branch)
+// - Convert to lowercase
+// - Remove leading/trailing hyphens
+// - Collapse multiple consecutive hyphens
+// - Max length 63 characters (DNS label limit)
+// Returns empty string if the branch name cannot be sanitized to a valid subdomain.
+func sanitizeBranchForSubdomain(branch string) string {
+	if branch == "" {
+		return ""
+	}
+
+	// Convert to lowercase
+	result := strings.ToLower(branch)
+
+	// Replace common invalid characters
+	result = strings.ReplaceAll(result, "/", "-")
+	result = strings.ReplaceAll(result, "_", "-")
+	result = strings.ReplaceAll(result, ".", "-")
+
+	// Remove any characters that aren't alphanumeric or hyphen
+	var cleaned strings.Builder
+	for _, r := range result {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			cleaned.WriteRune(r)
+		}
+	}
+	result = cleaned.String()
+
+	// Collapse multiple consecutive hyphens
+	for strings.Contains(result, "--") {
+		result = strings.ReplaceAll(result, "--", "-")
+	}
+
+	// Remove leading and trailing hyphens
+	result = strings.Trim(result, "-")
+
+	// Enforce DNS label max length (63 characters)
+	if len(result) > 63 {
+		result = result[:63]
+		// Remove trailing hyphen if truncation created one
+		result = strings.TrimSuffix(result, "-")
+	}
+
+	// Validate: must start with alphanumeric
+	if len(result) == 0 {
+		return ""
+	}
+	if !((result[0] >= 'a' && result[0] <= 'z') || (result[0] >= '0' && result[0] <= '9')) {
+		return ""
+	}
+
+	return result
 }
 
 // generateDomainVerificationHash creates a SHA256 hash for domain verification.

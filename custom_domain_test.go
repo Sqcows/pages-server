@@ -98,7 +98,7 @@ func TestResolveCustomDomainWithCache(t *testing.T) {
 	cache.Set(cacheKey, cacheValue)
 
 	// Resolve from cache
-	username, repository, err := ps.resolveCustomDomain(context.Background(), domain)
+	username, repository, branch, err := ps.resolveCustomDomain(context.Background(), domain)
 	if err != nil {
 		t.Fatalf("resolveCustomDomain failed: %v", err)
 	}
@@ -108,6 +108,9 @@ func TestResolveCustomDomainWithCache(t *testing.T) {
 	}
 	if repository != "testrepository" {
 		t.Errorf("Expected repository %q, got %q", "testrepository", repository)
+	}
+	if branch != "" {
+		t.Errorf("Expected empty branch, got %q", branch)
 	}
 }
 
@@ -125,14 +128,14 @@ func TestResolveCustomDomainNotRegistered(t *testing.T) {
 
 	// Try to resolve unregistered domain
 	domain := "unregistered.example.com"
-	username, repository, err := ps.resolveCustomDomain(context.Background(), domain)
+	username, repository, branch, err := ps.resolveCustomDomain(context.Background(), domain)
 
 	if err == nil {
 		t.Fatalf("Expected error for unregistered domain, got nil")
 	}
 
-	if username != "" || repository != "" {
-		t.Errorf("Expected empty username and repository, got %q and %q", username, repository)
+	if username != "" || repository != "" || branch != "" {
+		t.Errorf("Expected empty username, repository, and branch, got %q, %q, and %q", username, repository, branch)
 	}
 
 	expectedErrMsg := "custom domain not registered"
@@ -544,5 +547,155 @@ func TestRegisterTraefikRouterCustomCertResolver(t *testing.T) {
 	}
 	for _, key := range keysToDelete {
 		redisCache.Delete(key)
+	}
+}
+
+// TestSanitizeBranchForSubdomain tests the sanitizeBranchForSubdomain function.
+func TestSanitizeBranchForSubdomain(t *testing.T) {
+	tests := []struct {
+		name     string
+		branch   string
+		expected string
+	}{
+		{
+			name:     "simple branch",
+			branch:   "stage",
+			expected: "stage",
+		},
+		{
+			name:     "branch with slash",
+			branch:   "feature/new-ui",
+			expected: "feature-new-ui",
+		},
+		{
+			name:     "branch with underscore",
+			branch:   "release_v1",
+			expected: "release-v1",
+		},
+		{
+			name:     "branch with multiple slashes",
+			branch:   "feature/user/auth",
+			expected: "feature-user-auth",
+		},
+		{
+			name:     "uppercase branch",
+			branch:   "Feature/New-UI",
+			expected: "feature-new-ui",
+		},
+		{
+			name:     "branch with dot",
+			branch:   "release.1.0",
+			expected: "release-1-0",
+		},
+		{
+			name:     "branch with numbers",
+			branch:   "hotfix-123",
+			expected: "hotfix-123",
+		},
+		{
+			name:     "branch starting with number",
+			branch:   "123-fix",
+			expected: "123-fix",
+		},
+		{
+			name:     "branch with multiple consecutive special chars",
+			branch:   "feature//test__branch",
+			expected: "feature-test-branch",
+		},
+		{
+			name:     "branch with leading special char",
+			branch:   "/feature",
+			expected: "feature",
+		},
+		{
+			name:     "branch with trailing special char",
+			branch:   "feature/",
+			expected: "feature",
+		},
+		{
+			name:     "empty branch",
+			branch:   "",
+			expected: "",
+		},
+		{
+			name:     "only special characters",
+			branch:   "///___",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeBranchForSubdomain(tt.branch)
+			if result != tt.expected {
+				t.Errorf("sanitizeBranchForSubdomain(%q) = %q, want %q", tt.branch, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestResolveCustomDomainWithBranch tests resolving a branch subdomain.
+func TestResolveCustomDomainWithBranch(t *testing.T) {
+	cache := NewMemoryCache(300)
+	ps := &PagesServer{
+		config: &Config{
+			PagesDomain:         "pages.example.com",
+			ForgejoHost:         "https://git.example.com",
+			EnableCustomDomains: true,
+		},
+		customDomainCache: cache,
+	}
+
+	// Set up main custom domain mapping
+	mainDomain := "bovine.squarecows.com"
+	mainCacheKey := "custom_domain:" + mainDomain
+	cache.Set(mainCacheKey, []byte("testuser:testrepo"))
+
+	// Set up branch subdomain mapping
+	branchDomain := "stage.bovine.squarecows.com"
+	branchCacheKey := "custom_domain:" + branchDomain
+	cache.Set(branchCacheKey, []byte("testuser:testrepo:stage"))
+
+	// Test resolving main domain (no branch)
+	username, repository, branch, err := ps.resolveCustomDomain(context.Background(), mainDomain)
+	if err != nil {
+		t.Fatalf("resolveCustomDomain failed: %v", err)
+	}
+	if username != "testuser" || repository != "testrepo" || branch != "" {
+		t.Errorf("Expected testuser/testrepo with no branch, got %s/%s (branch: %q)", username, repository, branch)
+	}
+
+	// Test resolving branch subdomain
+	username, repository, branch, err = ps.resolveCustomDomain(context.Background(), branchDomain)
+	if err != nil {
+		t.Fatalf("resolveCustomDomain for branch failed: %v", err)
+	}
+	if username != "testuser" || repository != "testrepo" || branch != "stage" {
+		t.Errorf("Expected testuser/testrepo with branch 'stage', got %s/%s (branch: %q)", username, repository, branch)
+	}
+}
+
+// TestCacheKeyWithBranch tests that cache keys include branch for branch-specific content.
+func TestCacheKeyWithBranch(t *testing.T) {
+	// Test that the cache key format includes branch
+	username := "testuser"
+	repository := "testrepo"
+	branch := "stage"
+	filePath := "public/index.html"
+
+	cacheKey := fmt.Sprintf("%s:%s:%s:%s", username, repository, branch, filePath)
+	expected := "testuser:testrepo:stage:public/index.html"
+
+	if cacheKey != expected {
+		t.Errorf("Cache key format incorrect: got %q, want %q", cacheKey, expected)
+	}
+
+	// Test with empty branch
+	branchEmpty := ""
+	cacheKeyEmpty := fmt.Sprintf("%s:%s:%s:%s", username, repository, branchEmpty, filePath)
+	expectedEmpty := "testuser:testrepo::public/index.html"
+
+	if cacheKeyEmpty != expectedEmpty {
+		t.Errorf("Cache key with empty branch incorrect: got %q, want %q", cacheKeyEmpty, expectedEmpty)
 	}
 }

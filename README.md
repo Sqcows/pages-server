@@ -51,7 +51,18 @@ The `.pages` file is a YAML configuration file:
 ```yaml
 enabled: true
 custom_domain: example.com  # Optional: custom domain for this site
+enable_branches:            # Optional: branch subdomains (requires custom_domain)
+  - stage
+  - qa
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | No | Enable/disable pages for this repository (default: true) |
+| `custom_domain` | string | No | Custom domain for this site |
+| `password` | string | No | SHA256 hash for password protection |
+| `directory_index` | boolean | No | Enable directory listing when no index.html exists |
+| `enable_branches` | array | No | List of branches to create subdomains for (requires `custom_domain`) |
 
 ### Directory Index Support
 
@@ -561,6 +572,144 @@ http:
           forgejoHost: https://git.example.com
           enableCustomDomains: false  # Disable custom domains
 ```
+
+### Branch Subdomains
+
+Branch subdomains allow you to serve content from specific Git branches as subdomains of your custom domain. This is useful for staging environments, QA testing, or preview deployments.
+
+#### How Branch Subdomains Work
+
+When you configure `enable_branches` in your `.pages` file:
+
+1. **Main Domain**: `custom_domain` serves content from the default branch
+2. **Branch Subdomains**: Each branch in `enable_branches` gets its own subdomain
+
+**Example**: With `custom_domain: bovine.squarecows.com` and `enable_branches: ["stage", "qa"]`:
+- `bovine.squarecows.com` → serves from default branch (e.g., `main`)
+- `stage.bovine.squarecows.com` → serves from `stage` branch
+- `qa.bovine.squarecows.com` → serves from `qa` branch
+
+#### Setting Up Branch Subdomains
+
+**Step 1: Configure your `.pages` file**
+
+```yaml
+enabled: true
+custom_domain: bovine.squarecows.com
+enable_branches:
+  - stage
+  - qa
+  - dev
+```
+
+Or using inline array format:
+
+```yaml
+enabled: true
+custom_domain: bovine.squarecows.com
+enable_branches: ["stage", "qa", "dev"]
+```
+
+**Step 2: Configure DNS**
+
+You need DNS records for each branch subdomain. Choose one of these approaches:
+
+**Option A: Wildcard DNS (Recommended)**
+```
+*.bovine.squarecows.com.  A     YOUR_TRAEFIK_IP
+bovine.squarecows.com.    A     YOUR_TRAEFIK_IP
+```
+
+**Option B: Individual DNS Records**
+```
+bovine.squarecows.com.       A     YOUR_TRAEFIK_IP
+stage.bovine.squarecows.com. A     YOUR_TRAEFIK_IP
+qa.bovine.squarecows.com.    A     YOUR_TRAEFIK_IP
+dev.bovine.squarecows.com.   A     YOUR_TRAEFIK_IP
+```
+
+**Step 3: Create the branches**
+
+Ensure each branch listed in `enable_branches` exists in your repository:
+
+```bash
+git checkout -b stage
+git push origin stage
+
+git checkout -b qa
+git push origin qa
+```
+
+**Step 4: Activate branch subdomains**
+
+Visit your main pages URL to register all domains:
+```
+https://username.pages.example.com/repository
+```
+
+The plugin will:
+- Register the main custom domain
+- Verify each branch exists
+- Register each branch subdomain
+- Create Traefik routers for SSL certificates
+
+#### Branch Name Sanitization
+
+Git branch names are automatically converted to valid DNS subdomain labels:
+
+| Git Branch | Subdomain |
+|------------|-----------|
+| `stage` | `stage` |
+| `feature/new-ui` | `feature-new-ui` |
+| `release_v1.0` | `release-v1-0` |
+| `Feature/NEW_UI` | `feature-new-ui` |
+| `hotfix-123` | `hotfix-123` |
+
+**Sanitization Rules:**
+- Slashes (`/`) → hyphens (`-`)
+- Underscores (`_`) → hyphens (`-`)
+- Dots (`.`) → hyphens (`-`)
+- Converted to lowercase
+- Multiple consecutive hyphens collapsed to single hyphen
+- Leading/trailing hyphens removed
+- Maximum 63 characters (DNS label limit)
+
+#### Cache Keys
+
+Branch content is cached separately from default branch content. The cache key format includes the branch:
+```
+username:repository:branch:filepath
+```
+
+This ensures that content from different branches is cached independently.
+
+#### Edge Cases
+
+| Scenario | Behavior |
+|----------|----------|
+| Branch doesn't exist | Warning logged, subdomain not registered |
+| Branch subdomain conflicts with existing domain | Error logged, subdomain not registered |
+| Empty `enable_branches` array | No additional subdomains created |
+| `enable_branches` without `custom_domain` | Warning logged, branches ignored |
+| Invalid branch name for subdomain | Warning logged, branch skipped |
+
+#### Example: Multi-Environment Deployment
+
+**.pages file:**
+```yaml
+enabled: true
+custom_domain: app.mycompany.com
+enable_branches:
+  - staging
+  - development
+  - feature/preview
+```
+
+**Result:**
+- `app.mycompany.com` → Production (main/master branch)
+- `staging.app.mycompany.com` → Staging environment
+- `development.app.mycompany.com` → Development environment
+- `feature-preview.app.mycompany.com` → Preview of feature branch
 
 ## Password Protection
 
