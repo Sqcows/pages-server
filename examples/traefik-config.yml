@@ -29,7 +29,7 @@ experimental:
   plugins:
     pages-server:
       moduleName: github.com/sqcows/pages-server
-      version: v0.1.4
+      version: v0.1.5
 
 # Define entry points
 entryPoints:

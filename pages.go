@@ -89,6 +89,18 @@ type Config struct {
 	// MaxRedirects is the maximum number of redirect rules to read from .redirects file (default: 25)
 	// Limits resource exhaustion from extremely large redirect files
 	MaxRedirects int `json:"maxRedirects,omitempty"`
+
+	// RedisPoolSize is the size of the Redis connection pool (default: 10)
+	// The pool maintains this many idle connections for reuse
+	RedisPoolSize int `json:"redisPoolSize,omitempty"`
+
+	// RedisMaxConnections is the maximum total number of Redis connections allowed (default: 20)
+	// This includes both pooled and in-use connections. Requests will block when this limit is reached.
+	RedisMaxConnections int `json:"redisMaxConnections,omitempty"`
+
+	// RedisConnWaitTimeout is the timeout in seconds for waiting for an available connection (default: 5)
+	// If a connection is not available within this time, the request falls back to in-memory cache
+	RedisConnWaitTimeout int `json:"redisConnWaitTimeout,omitempty"`
 }
 
 // CreateConfig creates and initializes the plugin configuration.
@@ -100,10 +112,13 @@ func CreateConfig() *Config {
 		CustomDomainCacheTTL:      600,
 		TraefikRedisRouterEnabled: true,
 		TraefikRedisCertResolver:  "letsencrypt-http",
-		TraefikRedisRouterTTL:     0, // Persistent - cleaned by reaper
+		TraefikRedisRouterTTL:     0,  // Persistent - cleaned by reaper
 		TraefikRedisRootKey:       "traefik",
 		AuthCookieDuration:        3600, // 1 hour
 		MaxRedirects:              25,   // Default max redirects
+		RedisPoolSize:             10,   // Default pool size
+		RedisMaxConnections:       20,   // Default max total connections
+		RedisConnWaitTimeout:      5,    // Default wait timeout in seconds
 	}
 }
 
@@ -142,7 +157,8 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	// Initialize cache (Redis or in-memory)
 	var cache Cache
 	if config.RedisHost != "" {
-		cache = NewRedisCache(config.RedisHost, config.RedisPort, config.RedisPassword, config.CacheTTL)
+		cache = NewRedisCache(config.RedisHost, config.RedisPort, config.RedisPassword, config.CacheTTL,
+			config.RedisPoolSize, config.RedisMaxConnections, config.RedisConnWaitTimeout)
 	} else {
 		cache = NewMemoryCache(config.CacheTTL)
 	}
@@ -151,7 +167,8 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	// Custom domain mappings don't expire - they persist until removed by external reaper script
 	var customDomainCache Cache
 	if config.RedisHost != "" {
-		customDomainCache = NewRedisCache(config.RedisHost, config.RedisPort, config.RedisPassword, 0) // TTL=0 means no expiry
+		customDomainCache = NewRedisCache(config.RedisHost, config.RedisPort, config.RedisPassword, 0,
+			config.RedisPoolSize, config.RedisMaxConnections, config.RedisConnWaitTimeout) // TTL=0 means no expiry
 	} else {
 		customDomainCache = NewMemoryCache(0) // In-memory also uses no expiry
 	}
@@ -160,7 +177,8 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	// Password hashes are cached briefly to reduce .pages file reads
 	var passwordCache Cache
 	if config.RedisHost != "" {
-		passwordCache = NewRedisCache(config.RedisHost, config.RedisPort, config.RedisPassword, 60) // 60-second TTL
+		passwordCache = NewRedisCache(config.RedisHost, config.RedisPort, config.RedisPassword, 60,
+			config.RedisPoolSize, config.RedisMaxConnections, config.RedisConnWaitTimeout) // 60-second TTL
 	} else {
 		passwordCache = NewMemoryCache(60) // 60-second TTL
 	}

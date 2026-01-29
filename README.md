@@ -86,7 +86,7 @@ experimental:
   plugins:
     pages-server:
       moduleName: github.com/sqcows/pages-server
-      version: v0.1.4
+      version: v0.1.5
 ```
 
 ### 2. Configure Let's Encrypt (ACME)
@@ -199,6 +199,9 @@ http:
 | `redisHost` | string | "" | Redis server host for caching |
 | `redisPort` | int | 6379 | Redis server port |
 | `redisPassword` | string | "" | Redis password |
+| `redisPoolSize` | int | 10 | Size of the idle connection pool per cache instance |
+| `redisMaxConnections` | int | 20 | Maximum total connections per cache instance (pool + active) |
+| `redisConnWaitTimeout` | int | 5 | Seconds to wait for a connection when pool is exhausted |
 | `cacheTTL` | int | 300 | Cache time-to-live in seconds |
 | `traefikRedisRouterEnabled` | bool | true | Enable automatic Traefik router registration for custom domains |
 | `traefikRedisCertResolver` | string | "letsencrypt-http" | Certificate resolver to use for dynamically registered custom domains |

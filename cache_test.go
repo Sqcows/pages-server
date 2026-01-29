@@ -221,7 +221,7 @@ func TestMemoryCacheConcurrency(t *testing.T) {
 
 // TestNewRedisCache tests the NewRedisCache function.
 func TestNewRedisCache(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 300)
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	if cache == nil {
@@ -239,12 +239,24 @@ func TestNewRedisCache(t *testing.T) {
 	if cache.fallback == nil {
 		t.Error("Expected fallback cache to be initialized")
 	}
+
+	if cache.poolSize != 10 {
+		t.Errorf("Expected poolSize %d, got %d", 10, cache.poolSize)
+	}
+
+	if cache.maxConnections != 20 {
+		t.Errorf("Expected maxConnections %d, got %d", 20, cache.maxConnections)
+	}
+
+	if cache.connWaitTimeout != 5*time.Second {
+		t.Errorf("Expected connWaitTimeout %v, got %v", 5*time.Second, cache.connWaitTimeout)
+	}
 }
 
 // TestRedisCacheSetGet tests basic SET and GET operations with Redis.
 // This test requires a Redis/Valkey server running on localhost:6379.
 func TestRedisCacheSetGet(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 300)
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	key := "test-key-setget"
@@ -270,7 +282,7 @@ func TestRedisCacheSetGet(t *testing.T) {
 
 // TestRedisCacheDelete tests the DELETE operation.
 func TestRedisCacheDelete(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 300)
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	key := "test-key-delete"
@@ -298,7 +310,7 @@ func TestRedisCacheDelete(t *testing.T) {
 // TestRedisCacheTTL tests that values expire after TTL.
 // This test requires a Redis/Valkey server running on localhost:6379.
 func TestRedisCacheTTL(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 2) // 2 second TTL
+	cache := NewRedisCache("localhost", 6379, "", 2, 10, 20, 5) // 2 second TTL
 	defer cache.Close()
 
 	key := "test-key-ttl"
@@ -325,7 +337,7 @@ func TestRedisCacheTTL(t *testing.T) {
 
 // TestRedisCacheGetNotFound tests GET with a non-existent key.
 func TestRedisCacheGetNotFound(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 300)
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	_, found := cache.Get("nonexistent-key-12345")
@@ -338,7 +350,7 @@ func TestRedisCacheGetNotFound(t *testing.T) {
 // when Redis is unavailable.
 func TestRedisCacheFallbackOnConnectionFailure(t *testing.T) {
 	// Connect to a non-existent Redis server
-	cache := NewRedisCache("localhost", 9999, "", 300)
+	cache := NewRedisCache("localhost", 9999, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	key := "test-key-fallback"
@@ -367,7 +379,7 @@ func TestRedisCacheAuthentication(t *testing.T) {
 	t.Skip("Skipping authentication test - requires Redis with password")
 
 	password := "test-password"
-	cache := NewRedisCache("localhost", 6379, password, 300)
+	cache := NewRedisCache("localhost", 6379, password, 300, 10, 20, 5)
 	defer cache.Close()
 
 	key := "test-key-auth"
@@ -389,7 +401,7 @@ func TestRedisCacheAuthentication(t *testing.T) {
 
 // TestRedisCacheClear tests the FLUSHDB operation.
 func TestRedisCacheClear(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 300)
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	// Set multiple values
@@ -419,7 +431,7 @@ func TestRedisCacheClear(t *testing.T) {
 
 // TestRedisCacheConcurrency tests concurrent access to Redis cache.
 func TestRedisCacheConcurrency(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 300)
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	done := make(chan bool)
@@ -461,7 +473,7 @@ func TestRedisCacheConcurrency(t *testing.T) {
 
 // TestRedisCacheBinaryData tests storing and retrieving binary data.
 func TestRedisCacheBinaryData(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 300)
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	key := "test-binary-key"
@@ -490,7 +502,7 @@ func TestRedisCacheBinaryData(t *testing.T) {
 
 // TestRedisCacheLargeValue tests storing and retrieving large values.
 func TestRedisCacheLargeValue(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 300)
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	key := "test-large-key"
@@ -523,7 +535,7 @@ func TestRedisCacheLargeValue(t *testing.T) {
 
 // TestRedisCacheConnectionPool tests that the connection pool works correctly.
 func TestRedisCacheConnectionPool(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 300)
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	// Perform multiple operations that should reuse connections
@@ -548,7 +560,7 @@ func TestRedisCacheConnectionPool(t *testing.T) {
 
 // TestRedisCacheSetWithTTL tests the SetWithTTL method.
 func TestRedisCacheSetWithTTL(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 300)
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	key := "test-key-setttl"
@@ -583,7 +595,7 @@ func TestRedisCacheSetWithTTL(t *testing.T) {
 
 // TestRedisCacheSetWithTTLDifferentFromDefault tests that SetWithTTL uses custom TTL not default.
 func TestRedisCacheSetWithTTLDifferentFromDefault(t *testing.T) {
-	cache := NewRedisCache("localhost", 6379, "", 10) // Default 10 second TTL
+	cache := NewRedisCache("localhost", 6379, "", 10, 10, 20, 5) // Default 10 second TTL
 	defer cache.Close()
 
 	key := "test-key-custom-ttl"
@@ -615,7 +627,7 @@ func TestRedisCacheSetWithTTLDifferentFromDefault(t *testing.T) {
 // TestRedisCacheSetWithTTLFallback tests that SetWithTTL falls back to memory cache on failure.
 func TestRedisCacheSetWithTTLFallback(t *testing.T) {
 	// Connect to a non-existent Redis server
-	cache := NewRedisCache("localhost", 9999, "", 300)
+	cache := NewRedisCache("localhost", 9999, "", 300, 10, 20, 5)
 	defer cache.Close()
 
 	key := "test-key-ttl-fallback"
@@ -631,6 +643,179 @@ func TestRedisCacheSetWithTTLFallback(t *testing.T) {
 	got, found := cache.Get(key)
 	if !found {
 		t.Fatal("Expected to find value in fallback cache")
+	}
+
+	if string(got) != string(value) {
+		t.Errorf("Expected value %q, got %q", string(value), string(got))
+	}
+}
+
+// TestRedisCacheConnectionLimiting tests that the connection pool and max connections limit work correctly.
+func TestRedisCacheConnectionLimiting(t *testing.T) {
+	// Create a cache with small pool and max connections for testing
+	poolSize := 2
+	maxConnections := 5
+	connWaitTimeout := 2 // 2 second timeout
+	cache := NewRedisCache("localhost", 6379, "", 300, poolSize, maxConnections, connWaitTimeout)
+	defer cache.Close()
+
+	// Test 1: Verify initial pool size
+	if len(cache.connPool) < poolSize {
+		t.Logf("Warning: Initial pool has %d connections, expected %d", len(cache.connPool), poolSize)
+	}
+
+	// Test 2: Verify semaphore has correct capacity
+	if cap(cache.connSemaphore) != maxConnections {
+		t.Errorf("Expected semaphore capacity %d, got %d", maxConnections, cap(cache.connSemaphore))
+	}
+
+	// Test 3: Perform operations up to max connections
+	// This should succeed without blocking
+	done := make(chan bool, maxConnections)
+	results := make(chan error, maxConnections)
+
+	// Start goroutines that hold connections
+	for i := 0; i < maxConnections; i++ {
+		go func(n int) {
+			key := fmt.Sprintf("limit-test-%d", n)
+			value := []byte(fmt.Sprintf("value-%d", n))
+
+			// Set will acquire a connection
+			cache.Set(key, value)
+
+			// Signal completion
+			results <- nil
+			<-done // Wait for signal to release
+		}(i)
+	}
+
+	// Wait for all goroutines to acquire connections
+	for i := 0; i < maxConnections; i++ {
+		select {
+		case err := <-results:
+			if err != nil {
+				t.Errorf("Operation %d failed: %v", i, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("Timeout waiting for operation %d to complete", i)
+		}
+	}
+
+	// Signal all goroutines to complete
+	for i := 0; i < maxConnections; i++ {
+		done <- true
+	}
+
+	// Test 4: Clean up - verify all data was written
+	for i := 0; i < maxConnections; i++ {
+		key := fmt.Sprintf("limit-test-%d", i)
+		cache.Delete(key)
+	}
+}
+
+// TestRedisCacheConnectionWaitTimeout tests that connection acquisition times out correctly.
+func TestRedisCacheConnectionWaitTimeout(t *testing.T) {
+	// Create a cache with tiny pool and max connections for testing timeout
+	poolSize := 1
+	maxConnections := 2
+	connWaitTimeout := 1 // 1 second timeout
+	cache := NewRedisCache("localhost", 6379, "", 300, poolSize, maxConnections, connWaitTimeout)
+	defer cache.Close()
+
+	// Hold all available connections
+	conn1, err := cache.getConnection()
+	if err != nil {
+		t.Fatalf("Failed to get first connection: %v", err)
+	}
+	defer cache.releaseConnection(conn1)
+
+	conn2, err := cache.getConnection()
+	if err != nil {
+		t.Fatalf("Failed to get second connection: %v", err)
+	}
+	defer cache.releaseConnection(conn2)
+
+	// Now all maxConnections are in use
+	// Try to get another connection - should timeout and fall back to memory cache
+	start := time.Now()
+	_, err = cache.getConnection()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("Expected error when all connections are exhausted")
+	}
+
+	// Verify it waited approximately the timeout period
+	if elapsed < time.Duration(connWaitTimeout)*time.Second {
+		t.Errorf("Expected to wait at least %d seconds, waited %v", connWaitTimeout, elapsed)
+	}
+
+	if elapsed > time.Duration(connWaitTimeout+2)*time.Second {
+		t.Errorf("Waited too long: %v (expected ~%d seconds)", elapsed, connWaitTimeout)
+	}
+}
+
+// TestRedisCacheConnectionPoolReuse tests that connections are properly reused from the pool.
+func TestRedisCacheConnectionPoolReuse(t *testing.T) {
+	poolSize := 3
+	maxConnections := 10
+	cache := NewRedisCache("localhost", 6379, "", 300, poolSize, maxConnections, 5)
+	defer cache.Close()
+
+	// Perform multiple operations - should reuse pooled connections
+	for i := 0; i < 20; i++ {
+		key := fmt.Sprintf("reuse-test-%d", i)
+		value := []byte(fmt.Sprintf("value-%d", i))
+
+		cache.Set(key, value)
+		got, found := cache.Get(key)
+
+		if !found {
+			t.Errorf("Failed to find key %s", key)
+		}
+
+		if string(got) != string(value) {
+			t.Errorf("Value mismatch for key %s", key)
+		}
+
+		cache.Delete(key)
+	}
+
+	// Verify we didn't exhaust the semaphore
+	// The pool should have connections available
+	poolLen := len(cache.connPool)
+	if poolLen == 0 {
+		t.Error("Expected connections to be returned to pool after operations")
+	}
+}
+
+// TestRedisCacheFallbackOnConnectionExhaustion tests fallback to in-memory cache when connections are exhausted.
+func TestRedisCacheFallbackOnConnectionExhaustion(t *testing.T) {
+	// Create a cache with minimal limits
+	poolSize := 1
+	maxConnections := 1
+	connWaitTimeout := 1 // 1 second timeout
+	cache := NewRedisCache("localhost", 6379, "", 300, poolSize, maxConnections, connWaitTimeout)
+	defer cache.Close()
+
+	// Hold the only available connection
+	conn, err := cache.getConnection()
+	if err != nil {
+		t.Fatalf("Failed to get connection: %v", err)
+	}
+	defer cache.releaseConnection(conn)
+
+	// Try to perform operations while connection is held
+	// Should fall back to in-memory cache
+	key := "exhaustion-test"
+	value := []byte("test-value")
+
+	cache.Set(key, value)
+
+	// Value should be in fallback cache
+	got, found := cache.fallback.Get(key)
+	if !found {
+		t.Error("Expected value to be in fallback cache when Redis connections exhausted")
 	}
 
 	if string(got) != string(value) {

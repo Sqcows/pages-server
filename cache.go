@@ -169,31 +169,48 @@ func (mc *MemoryCache) Stop() {
 // RedisCache implements a Redis-based cache using the RESP protocol.
 // This implementation uses only Go standard library for Yaegi compatibility.
 type RedisCache struct {
-	host     string
-	port     int
-	password string
-	ttl      int
-	mu       sync.RWMutex
-	fallback *MemoryCache // Used only if Redis connection fails
-	connPool chan net.Conn
-	poolSize int
-	timeout  time.Duration
+	host            string
+	port            int
+	password        string
+	ttl             int
+	mu              sync.RWMutex
+	fallback        *MemoryCache  // Used only if Redis connection fails
+	connPool        chan net.Conn // Buffered channel for connection pooling
+	poolSize        int           // Size of the connection pool
+	maxConnections  int           // Maximum total connections allowed
+	connWaitTimeout time.Duration // Timeout for waiting for a connection
+	timeout         time.Duration // Timeout for individual Redis operations
+	connSemaphore   chan struct{} // Semaphore to limit total connections
 }
 
 // NewRedisCache creates a new Redis cache with connection pooling.
-func NewRedisCache(host string, port int, password string, ttlSeconds int) *RedisCache {
+// Parameters:
+// - host: Redis server hostname
+// - port: Redis server port
+// - password: Redis password (empty string for no authentication)
+// - ttlSeconds: Default TTL for cached items in seconds
+// - poolSize: Number of connections to maintain in the pool
+// - maxConnections: Maximum total connections allowed (includes pool + active)
+// - connWaitTimeoutSeconds: Timeout in seconds for waiting for an available connection
+func NewRedisCache(host string, port int, password string, ttlSeconds int, poolSize int, maxConnections int, connWaitTimeoutSeconds int) *RedisCache {
 	rc := &RedisCache{
-		host:     host,
-		port:     port,
-		password: password,
-		ttl:      ttlSeconds,
-		fallback: NewMemoryCache(ttlSeconds),
-		poolSize: 10,
-		timeout:  5 * time.Second,
+		host:            host,
+		port:            port,
+		password:        password,
+		ttl:             ttlSeconds,
+		fallback:        NewMemoryCache(ttlSeconds),
+		poolSize:        poolSize,
+		maxConnections:  maxConnections,
+		connWaitTimeout: time.Duration(connWaitTimeoutSeconds) * time.Second,
+		timeout:         5 * time.Second,
 	}
 
-	// Initialize connection pool
+	// Initialize connection pool with buffered channel
 	rc.connPool = make(chan net.Conn, rc.poolSize)
+
+	// Initialize semaphore to limit total connections
+	// The semaphore has maxConnections slots - each connection acquisition takes one slot
+	rc.connSemaphore = make(chan struct{}, rc.maxConnections)
 
 	// Pre-populate pool with connections
 	// If initial connections fail, we'll fall back to in-memory cache
@@ -201,6 +218,8 @@ func NewRedisCache(host string, port int, password string, ttlSeconds int) *Redi
 		conn, err := rc.newConnection()
 		if err == nil {
 			rc.connPool <- conn
+			// Acquire semaphore slot for this pooled connection
+			rc.connSemaphore <- struct{}{}
 		}
 	}
 
@@ -237,43 +256,78 @@ func (rc *RedisCache) newConnection() (net.Conn, error) {
 }
 
 // getConnection retrieves a connection from the pool or creates a new one.
+// This implementation uses a semaphore to limit the total number of connections.
+// If the maximum number of connections is reached, it blocks until a connection is available
+// or the wait timeout is exceeded.
 func (rc *RedisCache) getConnection() (net.Conn, error) {
+	// First, try to get a connection from the pool without blocking
 	select {
 	case conn := <-rc.connPool:
-		// Test connection with PING
+		// Got a pooled connection - test it with PING
 		err := rc.sendCommand(conn, "PING")
 		if err != nil {
 			conn.Close()
-			// Connection is dead, create a new one
-			return rc.newConnection()
+			// Connection is dead, release semaphore and try to create a new one
+			<-rc.connSemaphore
+			return rc.createNewConnectionWithSemaphore()
 		}
 
 		// Read PING response
 		_, err = rc.readResponse(conn)
 		if err != nil {
 			conn.Close()
-			return rc.newConnection()
+			// Connection is dead, release semaphore and try to create a new one
+			<-rc.connSemaphore
+			return rc.createNewConnectionWithSemaphore()
 		}
 
+		// Connection is healthy, return it
 		return conn, nil
 	default:
-		// Pool is empty, create new connection
-		return rc.newConnection()
+		// Pool is empty, need to create a new connection
+		// Try to acquire semaphore with timeout
+		return rc.createNewConnectionWithSemaphore()
 	}
 }
 
-// releaseConnection returns a connection to the pool.
+// createNewConnectionWithSemaphore creates a new connection while respecting the semaphore limit.
+// It will block up to connWaitTimeout waiting for a semaphore slot.
+func (rc *RedisCache) createNewConnectionWithSemaphore() (net.Conn, error) {
+	// Try to acquire semaphore slot with timeout
+	select {
+	case rc.connSemaphore <- struct{}{}:
+		// Successfully acquired semaphore slot, create connection
+		conn, err := rc.newConnection()
+		if err != nil {
+			// Failed to create connection, release semaphore slot
+			<-rc.connSemaphore
+			return nil, err
+		}
+		return conn, nil
+	case <-time.After(rc.connWaitTimeout):
+		// Timeout waiting for semaphore slot - all connections are in use
+		return nil, fmt.Errorf("connection wait timeout: all %d connections in use", rc.maxConnections)
+	}
+}
+
+// releaseConnection returns a connection to the pool or closes it if the pool is full.
+// Always releases the semaphore slot to allow new connections to be created.
 func (rc *RedisCache) releaseConnection(conn net.Conn) {
 	if conn == nil {
+		// No connection to release, but still release semaphore if it was acquired
+		// This handles cases where connection creation failed but semaphore was acquired
 		return
 	}
 
+	// Try to return connection to pool
 	select {
 	case rc.connPool <- conn:
-		// Connection returned to pool
+		// Connection successfully returned to pool
+		// Semaphore slot is still held by this pooled connection
 	default:
-		// Pool is full, close the connection
+		// Pool is full, close the connection and release semaphore
 		conn.Close()
+		<-rc.connSemaphore
 	}
 }
 

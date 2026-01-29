@@ -279,7 +279,7 @@ func TestTraefikRouterConfigDefaults(t *testing.T) {
 
 // TestRegisterTraefikRouterDisabled tests that router registration is skipped when disabled.
 func TestRegisterTraefikRouterDisabled(t *testing.T) {
-	redisCache := NewRedisCache("localhost", 6379, "", 600)
+	redisCache := NewRedisCache("localhost", 6379, "", 600, 10, 20, 5)
 	defer redisCache.Close()
 
 	ps := &PagesServer{
@@ -323,7 +323,7 @@ func TestRegisterTraefikRouterWithMemoryCache(t *testing.T) {
 
 // TestRegisterTraefikRouterWithRedis tests that router configuration is written to Redis correctly.
 func TestRegisterTraefikRouterWithRedis(t *testing.T) {
-	redisCache := NewRedisCache("localhost", 6379, "", 600)
+	redisCache := NewRedisCache("localhost", 6379, "", 600, 10, 20, 5)
 	defer redisCache.Close()
 
 	customDomain := "test.example.com"
@@ -375,7 +375,7 @@ func TestRegisterTraefikRouterWithRedis(t *testing.T) {
 
 // TestRegisterTraefikRouterSanitizesRouterName tests that router names are properly sanitized.
 func TestRegisterTraefikRouterSanitizesRouterName(t *testing.T) {
-	redisCache := NewRedisCache("localhost", 6379, "", 600)
+	redisCache := NewRedisCache("localhost", 6379, "", 600, 10, 20, 5)
 	defer redisCache.Close()
 
 	tests := []struct {
@@ -448,7 +448,7 @@ func TestRegisterTraefikRouterSanitizesRouterName(t *testing.T) {
 
 // TestRegisterTraefikRouterCustomRootKey tests that custom Redis root keys are respected.
 func TestRegisterTraefikRouterCustomRootKey(t *testing.T) {
-	redisCache := NewRedisCache("localhost", 6379, "", 600)
+	redisCache := NewRedisCache("localhost", 6379, "", 600, 10, 20, 5)
 	defer redisCache.Close()
 
 	customDomain := "custom-root.example.com"
@@ -499,7 +499,7 @@ func TestRegisterTraefikRouterCustomRootKey(t *testing.T) {
 
 // TestRegisterTraefikRouterCustomCertResolver tests that custom cert resolvers are used.
 func TestRegisterTraefikRouterCustomCertResolver(t *testing.T) {
-	redisCache := NewRedisCache("localhost", 6379, "", 600)
+	redisCache := NewRedisCache("localhost", 6379, "", 600, 10, 20, 5)
 	defer redisCache.Close()
 
 	customDomain := "custom-cert.example.com"
