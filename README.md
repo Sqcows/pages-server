@@ -976,6 +976,7 @@ To provide custom error pages:
 1. Create a repository (e.g., `system/error-pages`)
 2. Add a `.pages` file to enable it
 3. Create error page files in the `public/` folder:
+   - `public/index.html` - Landing page for base domain (e.g., `https://pages.example.com/`)
    - `public/404.html` - Not Found
    - `public/500.html` - Internal Server Error
    - `public/502.html` - Bad Gateway
@@ -985,6 +986,18 @@ To provide custom error pages:
    ```yaml
    errorPagesRepo: system/error-pages
    ```
+
+### Landing Page
+
+When the `errorPagesRepo` is configured, the plugin will serve `public/index.html` from that repository when someone accesses the base pagesDomain URL (e.g., `https://pages.example.com/` without any subdomain).
+
+This is useful for creating a landing page that explains your Pages service, provides documentation, or links to hosted sites.
+
+**Example:**
+- Base domain: `https://pages.example.com/` → serves `public/index.html` from error pages repository
+- User subdomain: `https://john.pages.example.com/` → serves from user's repositories (normal behavior)
+
+If no landing page is configured, accessing the base domain will return a 400 Bad Request error.
 
 ## Performance
 

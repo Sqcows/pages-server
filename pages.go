@@ -133,6 +133,7 @@ type PagesServer struct {
 	passwordCache     Cache // Cache for password hashes with 60-second TTL
 	mu                sync.RWMutex
 	errorPages        map[int][]byte
+	landingPage       []byte // Landing page from error pages repository (public/index.html)
 }
 
 // customDomainMapping represents a mapping from a custom domain to a repository.
@@ -237,6 +238,28 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	host := req.Host
 	if colonIdx := strings.Index(host, ":"); colonIdx != -1 {
 		host = host[:colonIdx]
+	}
+
+	// Check if this is a request to the base pagesDomain (no subdomain)
+	// e.g., https://pages.example.com/ (instead of https://username.pages.example.com/)
+	if host == ps.config.PagesDomain {
+		// Serve landing page if configured, otherwise show error
+		ps.mu.RLock()
+		landingPage := ps.landingPage
+		ps.mu.RUnlock()
+
+		if landingPage != nil {
+			rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+			rw.Header().Set("Cache-Control", "public, max-age=300")
+			rw.Header().Set("Server", "bovine")
+			rw.WriteHeader(http.StatusOK)
+			rw.Write(landingPage)
+			return
+		}
+
+		// No landing page configured, serve error
+		ps.serveError(rw, http.StatusBadRequest, "Invalid request format")
+		return
 	}
 
 	var username, repository, filePath, branch string
@@ -1084,6 +1107,14 @@ func (ps *PagesServer) loadErrorPages(ctx context.Context) error {
 	}
 
 	username, repository := parts[0], parts[1]
+
+	// Load landing page (public/index.html) for base domain access
+	landingPath := "public/index.html"
+	if landingContent, _, err := ps.forgejoClient.GetFileContent(ctx, username, repository, landingPath); err == nil {
+		ps.mu.Lock()
+		ps.landingPage = landingContent
+		ps.mu.Unlock()
+	}
 
 	// Common error pages to load
 	errorCodes := []int{400, 403, 404, 500, 502, 503}

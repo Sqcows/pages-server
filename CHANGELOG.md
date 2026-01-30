@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Landing Page for Base Domain**: Serve a landing page when accessing the base pagesDomain URL
+  - Add `public/index.html` to error pages repository to create a landing page
+  - Serves at base domain URL (e.g., `https://pages.example.com/`)
+  - Useful for service documentation, links, or welcome pages
+  - Falls back to 400 error if no landing page is configured
+  - Automatic HTTPS redirect applies to landing page requests
+  - Comprehensive test coverage for base domain access scenarios
 - **Branch Subdomain Password Protection**: Per-repository password protection for branch subdomains
   - Add `branchesPassword` field to `.pages` file with SHA256 hash
   - Protects all branch subdomains (e.g., `stage.example.com`, `qa.example.com`)
@@ -22,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added Branch-Subdomains.md wiki page with detailed branch subdomain and password protection guide
 - Added Password-Protection.md wiki page covering both repository and branch password protection
 - Updated FEATURE_COMPARISON.md to reflect branch password protection feature
+- Updated README.md Custom Error Pages section to document landing page feature
 
 ## [v0.1.5] - 2025-01-29
 

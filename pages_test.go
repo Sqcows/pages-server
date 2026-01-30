@@ -876,3 +876,135 @@ func TestServeBranchLoginPageWithError(t *testing.T) {
 		t.Error("Expected login page to have error styling")
 	}
 }
+
+// TestServeHTTPBaseDomainWithLandingPage tests serving the landing page on base domain.
+func TestServeHTTPBaseDomainWithLandingPage(t *testing.T) {
+	landingPageContent := []byte("<html><body><h1>Welcome to Pages</h1></body></html>")
+
+	ps := &PagesServer{
+		config: &Config{
+			PagesDomain: "pages.example.com",
+			ForgejoHost: "https://git.example.com",
+		},
+		landingPage: landingPageContent,
+	}
+
+	// Test request to base domain (no subdomain)
+	req := httptest.NewRequest("GET", "https://pages.example.com/", nil)
+	req.Host = "pages.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+
+	ps.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	expectedContentType := "text/html; charset=utf-8"
+	if contentType != expectedContentType {
+		t.Errorf("Expected Content-Type %q, got %q", expectedContentType, contentType)
+	}
+
+	body := rec.Body.Bytes()
+	if string(body) != string(landingPageContent) {
+		t.Errorf("Expected landing page content, got %q", string(body))
+	}
+
+	// Verify Server header is set
+	server := rec.Header().Get("Server")
+	if server != "bovine" {
+		t.Errorf("Expected Server header 'bovine', got %q", server)
+	}
+}
+
+// TestServeHTTPBaseDomainWithoutLandingPage tests error when accessing base domain without landing page.
+func TestServeHTTPBaseDomainWithoutLandingPage(t *testing.T) {
+	ps := &PagesServer{
+		config: &Config{
+			PagesDomain: "pages.example.com",
+			ForgejoHost: "https://git.example.com",
+		},
+		errorPages: make(map[int][]byte),
+		// No landing page configured
+	}
+
+	// Test request to base domain (no subdomain) without landing page
+	req := httptest.NewRequest("GET", "https://pages.example.com/", nil)
+	req.Host = "pages.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+
+	ps.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "Invalid request format") {
+		t.Error("Expected error message about invalid request format")
+	}
+}
+
+// TestServeHTTPBaseDomainWithPort tests landing page with port in host.
+func TestServeHTTPBaseDomainWithPort(t *testing.T) {
+	landingPageContent := []byte("<html><body><h1>Welcome</h1></body></html>")
+
+	ps := &PagesServer{
+		config: &Config{
+			PagesDomain: "pages.example.com",
+			ForgejoHost: "https://git.example.com",
+		},
+		landingPage: landingPageContent,
+	}
+
+	// Test request to base domain with port
+	req := httptest.NewRequest("GET", "https://pages.example.com:8080/", nil)
+	req.Host = "pages.example.com:8080"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+
+	ps.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	body := rec.Body.Bytes()
+	if string(body) != string(landingPageContent) {
+		t.Errorf("Expected landing page content, got %q", string(body))
+	}
+}
+
+// TestServeHTTPBaseDomainHTTPSRedirect tests HTTPS redirect on base domain.
+func TestServeHTTPBaseDomainHTTPSRedirect(t *testing.T) {
+	landingPageContent := []byte("<html><body><h1>Welcome</h1></body></html>")
+
+	ps := &PagesServer{
+		config: &Config{
+			PagesDomain: "pages.example.com",
+			ForgejoHost: "https://git.example.com",
+		},
+		landingPage: landingPageContent,
+	}
+
+	// Test HTTP request to base domain should redirect to HTTPS
+	req := httptest.NewRequest("GET", "http://pages.example.com/", nil)
+	req.Host = "pages.example.com"
+	req.Header.Set("X-Forwarded-Proto", "http")
+	rec := httptest.NewRecorder()
+
+	ps.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMovedPermanently {
+		t.Errorf("Expected status %d, got %d", http.StatusMovedPermanently, rec.Code)
+	}
+
+	location := rec.Header().Get("Location")
+	expectedLocation := "https://pages.example.com/"
+	if location != expectedLocation {
+		t.Errorf("Expected Location header %q, got %q", expectedLocation, location)
+	}
+}
