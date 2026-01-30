@@ -203,6 +203,11 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		}
 	}
 
+	// Register pagesDomain router in Traefik for SSL and HTTP→HTTPS redirect
+	if err := ps.registerPagesDomainRouter(ctx); err != nil {
+		fmt.Printf("Warning: failed to register pagesDomain router: %v\n", err)
+	}
+
 	return ps, nil
 }
 
@@ -770,6 +775,46 @@ func (ps *PagesServer) verifyCustomDomainDNS(domain, owner, repository string) (
 
 	// No matching TXT record found
 	return false, fmt.Errorf("DNS TXT record not found or incorrect for %s (expected: %s)", domain, expectedValue)
+}
+
+// registerPagesDomainRouter writes Traefik router configuration to Redis for the base pagesDomain.
+// This enables automatic SSL certificate generation and HTTP→HTTPS redirect for the pages domain itself.
+func (ps *PagesServer) registerPagesDomainRouter(ctx context.Context) error {
+	if !ps.config.TraefikRedisRouterEnabled {
+		return nil
+	}
+
+	// Only write if we have a working Redis cache
+	redisCache, ok := ps.customDomainCache.(*RedisCache)
+	if !ok {
+		// Using in-memory cache, skip Traefik router registration
+		return nil
+	}
+
+	// Create router name for the base pages domain
+	routerName := "pages-domain-base"
+	rootKey := ps.config.TraefikRedisRootKey
+
+	// Write router configuration keys to Redis
+	// This registers the base pagesDomain (e.g., pages.example.com) for SSL
+	configs := map[string]string{
+		fmt.Sprintf("%s/http/routers/%s/rule", rootKey, routerName):             fmt.Sprintf("Host(`%s`)", ps.config.PagesDomain),
+		fmt.Sprintf("%s/http/routers/%s/entryPoints/0", rootKey, routerName):    "web",
+		fmt.Sprintf("%s/http/routers/%s/entryPoints/1", rootKey, routerName):    "websecure",
+		fmt.Sprintf("%s/http/routers/%s/middlewares/0", rootKey, routerName):    "pages-server@file",
+		fmt.Sprintf("%s/http/routers/%s/service", rootKey, routerName):          "noop@internal",
+		fmt.Sprintf("%s/http/routers/%s/tls/certResolver", rootKey, routerName): ps.config.TraefikRedisCertResolver,
+		fmt.Sprintf("%s/http/routers/%s/priority", rootKey, routerName):         "10",
+	}
+
+	// Write each config key with TTL
+	for key, value := range configs {
+		if err := redisCache.SetWithTTL(key, []byte(value), ps.config.TraefikRedisRouterTTL); err != nil {
+			return fmt.Errorf("failed to write pagesDomain router config key %s: %w", key, err)
+		}
+	}
+
+	return nil
 }
 
 // registerTraefikRouter writes Traefik router configuration to Redis for automatic SSL certificate generation.
