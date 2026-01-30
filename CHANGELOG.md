@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Automatic PagesDomain Router Registration**: Register the base pagesDomain as a Traefik router on startup
+  - Automatically creates Traefik router configuration in Redis during plugin initialization
+  - Enables SSL certificate generation for the base pages domain (e.g., `pages.example.com`)
+  - Configures HTTP and HTTPS entrypoints with TLS cert resolver
+  - No manual Traefik router configuration needed for the base pages domain
+  - Only runs when `traefikRedisRouterEnabled` is true and Redis is configured
 - **Landing Page for Base Domain**: Serve a landing page when accessing the base pagesDomain URL
   - Add `public/index.html` to error pages repository to create a landing page
   - Serves at base domain URL (e.g., `https://pages.example.com/`)
@@ -30,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added Password-Protection.md wiki page covering both repository and branch password protection
 - Updated FEATURE_COMPARISON.md to reflect branch password protection feature
 - Updated README.md Custom Error Pages section to document landing page feature
+- Updated README.md to document automatic pagesDomain router registration on startup
+- Improved landing page documentation with use cases and example repository structure
 
 ## [v0.1.5] - 2025-01-29
 

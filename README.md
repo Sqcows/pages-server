@@ -16,7 +16,7 @@ A Traefik middleware plugin that provides static site hosting for Forgejo and Gi
 - **Profile Sites**: Personal pages served from `.profile` repository
 - **Custom Error Pages**: Configurable error pages from a designated repository
 - **Caching**: Built-in memory cache with optional Redis support for improved performance
-- **Redis Router Integration**: Automatic Traefik router registration for custom domains via Redis provider
+- **Redis Router Integration**: Automatic Traefik router registration for custom domains and the base pages domain via Redis provider
 - **High Performance**: Target response time <5ms with caching
 
 ## URL Structure
@@ -969,35 +969,57 @@ Commit and push the change.
 - Ensure no extra spaces or newlines in the hash
 - Re-generate the hash: `echo -n "password" | shasum -a 256`
 
-## Custom Error Pages
+## Custom Error Pages and Landing Page
 
-To provide custom error pages:
+The plugin supports custom error pages and a landing page for the base pages domain. These are served from a configurable error pages repository.
+
+### Setting Up Error Pages
 
 1. Create a repository (e.g., `system/error-pages`)
 2. Add a `.pages` file to enable it
-3. Create error page files in the `public/` folder:
-   - `public/index.html` - Landing page for base domain (e.g., `https://pages.example.com/`)
-   - `public/404.html` - Not Found
-   - `public/500.html` - Internal Server Error
-   - `public/502.html` - Bad Gateway
-   - `public/503.html` - Service Unavailable
+3. Create page files in the `public/` folder:
+
+| File | Purpose |
+|------|---------|
+| `public/index.html` | **Landing page** - served at base domain (e.g., `https://pages.example.com/`) |
+| `public/404.html` | Not Found error page |
+| `public/500.html` | Internal Server Error page |
+| `public/502.html` | Bad Gateway error page |
+| `public/503.html` | Service Unavailable error page |
 
 4. Configure the `errorPagesRepo` parameter:
    ```yaml
    errorPagesRepo: system/error-pages
    ```
 
-### Landing Page
+### Landing Page (Default Index)
 
-When the `errorPagesRepo` is configured, the plugin will serve `public/index.html` from that repository when someone accesses the base pagesDomain URL (e.g., `https://pages.example.com/` without any subdomain).
+When `errorPagesRepo` is configured, the plugin serves `public/index.html` from that repository as the **default landing page** for the base pagesDomain URL.
 
-This is useful for creating a landing page that explains your Pages service, provides documentation, or links to hosted sites.
+**How it works:**
+- Accessing `https://pages.example.com/` (no subdomain) → serves `public/index.html` from the error pages repository
+- Accessing `https://john.pages.example.com/` → serves from user's repositories (normal behavior)
 
-**Example:**
-- Base domain: `https://pages.example.com/` → serves `public/index.html` from error pages repository
-- User subdomain: `https://john.pages.example.com/` → serves from user's repositories (normal behavior)
+**Use cases:**
+- Welcome page explaining your Pages service
+- Documentation and getting started guides
+- Directory of hosted sites
+- Branding and promotional content
 
-If no landing page is configured, accessing the base domain will return a 400 Bad Request error.
+**Example repository structure:**
+```
+error-pages/
+├── .pages
+└── public/
+    ├── index.html      # Landing page for base domain
+    ├── 404.html        # Custom 404 error page
+    ├── 500.html        # Custom 500 error page
+    └── assets/
+        ├── style.css   # Shared styles
+        └── logo.png    # Branding
+```
+
+**Note:** If no `errorPagesRepo` is configured or no `index.html` exists, accessing the base domain returns a 400 Bad Request error.
 
 ## Performance
 
@@ -1115,7 +1137,14 @@ When using Redis caching, the plugin can automatically register custom domains w
 
 ### How It Works
 
-When a custom domain is registered (by visiting the pages URL):
+**On Plugin Startup:**
+
+The plugin automatically registers the base `pagesDomain` (e.g., `pages.example.com`) as a Traefik router. This enables:
+- Automatic SSL certificate generation for the pages domain
+- HTTP to HTTPS redirect handling
+- Landing page serving at the base domain URL
+
+**When a custom domain is registered** (by visiting the pages URL):
 
 1. **Domain Mapping**: The plugin caches the custom domain → repository mapping (existing behavior)
 2. **Router Registration**: The plugin writes Traefik router configuration to Redis
