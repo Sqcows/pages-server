@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Branch Subdomain Password Protection**: Per-repository password protection for branch subdomains
+  - Add `branchesPassword` field to `.pages` file with SHA256 hash
+  - Protects all branch subdomains (e.g., `stage.example.com`, `qa.example.com`)
+  - Main branch sites are NOT affected by `branchesPassword` (uses `password` field instead)
+  - Separate cookies per repository: `pages_branch_auth_{username}_{repository}`
+  - Same security features as repository password: HMAC-signed cookies, HttpOnly, Secure, SameSite=Strict
+  - Enables use case: public production site with password-protected staging/dev environments
+  - Comprehensive test coverage for branch authentication
+
+### Documentation
+- Created wiki directory with comprehensive documentation pages
+- Added Branch-Subdomains.md wiki page with detailed branch subdomain and password protection guide
+- Added Password-Protection.md wiki page covering both repository and branch password protection
+- Updated FEATURE_COMPARISON.md to reflect branch password protection feature
+
 ## [v0.1.5] - 2025-01-29
 
 ### Added

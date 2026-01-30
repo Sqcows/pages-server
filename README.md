@@ -60,7 +60,8 @@ enable_branches:            # Optional: branch subdomains (requires custom_domai
 |-------|------|----------|-------------|
 | `enabled` | boolean | No | Enable/disable pages for this repository (default: true) |
 | `custom_domain` | string | No | Custom domain for this site |
-| `password` | string | No | SHA256 hash for password protection |
+| `password` | string | No | SHA256 hash for password protection (main branch only) |
+| `branchesPassword` | string | No | SHA256 hash for password protection (non-main branches only) |
 | `directory_index` | boolean | No | Enable directory listing when no index.html exists |
 | `enable_branches` | array | No | List of branches to create subdomains for (requires `custom_domain`) |
 
@@ -856,6 +857,115 @@ enabled: true
 
 **"Incorrect password" even with correct password:**
 - Verify you're using the SHA256 hash in .pages, not plaintext
+
+## Branch Subdomain Password Protection
+
+Protect branch subdomains with a per-repository password. This is useful when you want to restrict access to staging, development, or other non-production environments for specific repositories.
+
+### How It Works
+
+1. Configure `branchesPassword` in your repository's `.pages` file with a SHA256 hash
+2. All branch subdomains for that repository (e.g., `stage.example.com`, `qa.example.com`) require this password
+3. Main branch sites (e.g., `example.com`) are NOT affected by `branchesPassword`
+4. Main branch sites can still use the `password` field from `.pages` file
+5. Branch password and repository password are separate - they use different cookies per repository
+
+### Key Differences from Repository Password Protection
+
+| Feature | Repository Password (`.pages` file) | Branch Password (`.pages` file) |
+|---------|-------------------------------------|--------------------------------|
+| **Applies to** | Main branch only | All branch subdomains only |
+| **Configuration** | Per-repository (`.pages` file `password` field) | Per-repository (`.pages` file `branchesPassword` field) |
+| **Cookie name** | `pages_auth_{username}_{repository}` | `pages_branch_auth_{username}_{repository}` |
+| **Use case** | Protect main production site | Protect staging/dev environments |
+
+### Setting Up Branch Password Protection
+
+**Step 1: Generate a password hash**
+
+```bash
+# Generate SHA256 hash of your branch password
+echo -n "staging-password-123" | shasum -a 256
+
+# Example output:
+# 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+```
+
+**Step 2: Add to your repository's `.pages` file**
+
+```yaml
+enabled: true
+custom_domain: example.com
+enable_branches:
+  - stage
+  - dev
+branchesPassword: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+```
+
+**Step 3: Commit and push**
+
+```bash
+git add .pages
+git commit -m "Add branch password protection"
+git push
+```
+
+### Example Use Cases
+
+**Scenario 1: Public production, private staging**
+```yaml
+# Repository .pages file
+enabled: true
+custom_domain: example.com
+enable_branches:
+  - stage
+  - dev
+branchesPassword: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+# No password field - production (example.com) is public
+```
+
+Result:
+- `example.com` - Public (no password)
+- `stage.example.com` - Protected by `branchesPassword`
+- `dev.example.com` - Protected by `branchesPassword`
+
+**Scenario 2: Private production, separate staging password**
+```yaml
+# Repository .pages file
+enabled: true
+custom_domain: example.com
+password: <production-password-hash>
+branchesPassword: <staging-password-hash>
+enable_branches:
+  - stage
+```
+
+Result:
+- `example.com` - Protected by `password`
+- `stage.example.com` - Protected by `branchesPassword`
+- Different passwords for production vs staging
+
+### Security Considerations
+
+- **Use different passwords**: Don't reuse the production password for branch environments
+- **Strong passwords**: Use long, random passwords for branch access
+- **Cookie scope**: Branch auth cookie is unique per repository (not shared across repositories)
+- **HTTPS required**: Like repository passwords, branch passwords require HTTPS
+- **Configure authSecretKey**: Recommended for HMAC cookie signing in Traefik middleware configuration
+
+### Removing Branch Password Protection
+
+Remove the `branchesPassword` field from your `.pages` file:
+
+```yaml
+enabled: true
+custom_domain: example.com
+enable_branches:
+  - stage
+# branchesPassword: removed  # Branch subdomains are now public
+```
+
+Commit and push the change.
 - Ensure no extra spaces or newlines in the hash
 - Re-generate the hash: `echo -n "password" | shasum -a 256`
 

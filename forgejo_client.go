@@ -64,11 +64,12 @@ type FileContent struct {
 
 // PagesConfig represents the configuration from .pages file.
 type PagesConfig struct {
-	CustomDomain   string   `yaml:"custom_domain"`
-	Enabled        bool     `yaml:"enabled"`
-	Password       string   `yaml:"password"`        // SHA256 hash of the password
-	DirectoryIndex bool     `yaml:"directory_index"` // Enable directory listing for directories without index.html
-	EnableBranches []string `yaml:"enable_branches"` // Branch subdomains for custom domain (e.g., ["stage", "qa"])
+	CustomDomain     string   `yaml:"custom_domain"`
+	Enabled          bool     `yaml:"enabled"`
+	Password         string   `yaml:"password"`          // SHA256 hash of the password for main branch
+	BranchesPassword string   `yaml:"branchesPassword"`  // SHA256 hash of the password for non-main branches
+	DirectoryIndex   bool     `yaml:"directory_index"`   // Enable directory listing for directories without index.html
+	EnableBranches   []string `yaml:"enable_branches"`   // Branch subdomains for custom domain (e.g., ["stage", "qa"])
 }
 
 // doRequest performs an HTTP request to the Forgejo API.
@@ -261,6 +262,14 @@ func (fc *ForgejoClient) GetPagesConfig(ctx context.Context, owner, repo string)
 				config.Password = strings.TrimSpace(parts[1])
 				// Remove quotes if present
 				config.Password = strings.Trim(config.Password, "\"'")
+			}
+		}
+		if strings.HasPrefix(trimmedLine, "branchesPassword:") {
+			parts := strings.SplitN(trimmedLine, ":", 2)
+			if len(parts) == 2 {
+				config.BranchesPassword = strings.TrimSpace(parts[1])
+				// Remove quotes if present
+				config.BranchesPassword = strings.Trim(config.BranchesPassword, "\"'")
 			}
 		}
 		if strings.HasPrefix(trimmedLine, "directory_index:") {

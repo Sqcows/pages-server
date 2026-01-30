@@ -29,6 +29,7 @@
 |---------|---------------------|--------------|--------------|
 | **DNS Verification** | ✅ Yes (SHA256 TXT records) | ❌ No | ❌ No |
 | **Password Protection** | ✅ Yes (SHA256 + HMAC cookies) | ❌ No | ✅ Yes (GitLab auth) |
+| **Branch Password Protection** | ✅ Yes (separate branch passwords) | ❌ No | ❌ No |
 | **Private Repository Support** | ✅ Yes (with API token) | ✅ Yes (paid plans) | ✅ Yes (paid plans) |
 | **Custom Error Pages** | ✅ Yes (configurable repo) | ✅ Yes (404.html only) | ✅ Yes |
 | **Rate Limiting** | ⚠️ Your infrastructure | ✅ Yes (10 builds/hour) | ✅ Yes |
@@ -43,6 +44,7 @@
 | **Caching Layer** | ✅ Yes (Redis or in-memory) | ✅ Yes (CDN) | ✅ Yes (CDN) |
 | **Custom Headers** | ⚠️ Via Traefik | ❌ No | ✅ Yes (_headers file) |
 | **Profile Pages** | ✅ Yes (.profile repo) | ✅ Yes (username.github.io) | ✅ Yes (username.gitlab.io) |
+| **Branch Subdomains** | ✅ Yes (stage.example.com) | ❌ No | ⚠️ Partial (via CI config) |
 
 ### Build & Deployment
 
@@ -148,4 +150,4 @@
 
 ---
 
-*Last updated: 2025-12-04 for Bovine Pages Server v0.1.1*
+*Last updated: 2025-01-30 for Bovine Pages Server v0.1.6*

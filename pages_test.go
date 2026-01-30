@@ -17,9 +17,12 @@ package pages_server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 // TestCreateConfig tests the CreateConfig function.
@@ -564,5 +567,312 @@ func TestServeErrorWithCustomPage(t *testing.T) {
 	body := rec.Body.Bytes()
 	if string(body) != string(customError) {
 		t.Errorf("Expected custom error page, got %q", string(body))
+	}
+}
+
+// TestHashPassword tests the hashPassword function.
+func TestHashPassword(t *testing.T) {
+	password := "test-password-123"
+	hash := hashPassword(password)
+
+	// SHA256 hash should be 64 hex characters
+	if len(hash) != 64 {
+		t.Errorf("Expected hash length 64, got %d", len(hash))
+	}
+
+	// Same password should produce same hash
+	hash2 := hashPassword(password)
+	if hash != hash2 {
+		t.Error("Same password should produce same hash")
+	}
+
+	// Different password should produce different hash
+	hash3 := hashPassword("different-password")
+	if hash == hash3 {
+		t.Error("Different passwords should produce different hashes")
+	}
+}
+
+// TestCreateBranchAuthCookie tests the createBranchAuthCookie function.
+func TestCreateBranchAuthCookie(t *testing.T) {
+	ps := &PagesServer{
+		config: &Config{
+			AuthSecretKey:      "test-secret-key-for-signing-cookies",
+			AuthCookieDuration: 3600,
+		},
+	}
+
+	username := "testuser"
+	repository := "testrepo"
+	cookie := ps.createBranchAuthCookie(username, repository)
+
+	if cookie == nil {
+		t.Fatal("createBranchAuthCookie returned nil")
+	}
+
+	expectedCookieName := fmt.Sprintf("pages_branch_auth_%s_%s", username, repository)
+	if cookie.Name != expectedCookieName {
+		t.Errorf("Expected cookie name %q, got %q", expectedCookieName, cookie.Name)
+	}
+
+	if cookie.Path != "/" {
+		t.Errorf("Expected cookie path '/', got %q", cookie.Path)
+	}
+
+	if cookie.MaxAge != 3600 {
+		t.Errorf("Expected cookie MaxAge 3600, got %d", cookie.MaxAge)
+	}
+
+	if !cookie.HttpOnly {
+		t.Error("Expected HttpOnly to be true")
+	}
+
+	if !cookie.Secure {
+		t.Error("Expected Secure to be true")
+	}
+
+	if cookie.SameSite != http.SameSiteStrictMode {
+		t.Errorf("Expected SameSite StrictMode, got %v", cookie.SameSite)
+	}
+
+	// Verify cookie value format (timestamp|signature)
+	if cookie.Value == "" {
+		t.Error("Expected non-empty cookie value")
+	}
+}
+
+// TestCreateBranchAuthCookieWithoutSecretKey tests cookie creation without a secret key.
+func TestCreateBranchAuthCookieWithoutSecretKey(t *testing.T) {
+	ps := &PagesServer{
+		config: &Config{
+			AuthSecretKey:      "", // No secret key
+			AuthCookieDuration: 3600,
+		},
+	}
+
+	username := "testuser"
+	repository := "testrepo"
+	cookie := ps.createBranchAuthCookie(username, repository)
+
+	if cookie == nil {
+		t.Fatal("createBranchAuthCookie returned nil")
+	}
+
+	expectedCookieName := fmt.Sprintf("pages_branch_auth_%s_%s", username, repository)
+	if cookie.Name != expectedCookieName {
+		t.Errorf("Expected cookie name %q, got %q", expectedCookieName, cookie.Name)
+	}
+
+	// Without secret key, value should just be timestamp
+	if cookie.Value == "" {
+		t.Error("Expected non-empty cookie value")
+	}
+}
+
+// TestVerifyBranchAuthCookie tests the verifyBranchAuthCookie function.
+func TestVerifyBranchAuthCookie(t *testing.T) {
+	ps := &PagesServer{
+		config: &Config{
+			AuthSecretKey:      "test-secret-key-for-signing-cookies",
+			AuthCookieDuration: 3600,
+		},
+	}
+
+	username := "testuser"
+	repository := "testrepo"
+
+	// Create a valid cookie
+	cookie := ps.createBranchAuthCookie(username, repository)
+
+	// Verify it
+	if !ps.verifyBranchAuthCookie(cookie.Value, username, repository) {
+		t.Error("Failed to verify valid branch auth cookie")
+	}
+
+	// Test invalid cookie formats
+	invalidCookies := []string{
+		"",
+		"invalid",
+		"timestamp-only",
+		"invalid|signature|format",
+	}
+
+	for _, invalid := range invalidCookies {
+		if ps.verifyBranchAuthCookie(invalid, username, repository) {
+			t.Errorf("Expected invalid cookie %q to fail verification", invalid)
+		}
+	}
+
+	// Test cookie from different repository should fail
+	otherRepo := "otherrepo"
+	if ps.verifyBranchAuthCookie(cookie.Value, username, otherRepo) {
+		t.Error("Expected cookie from different repository to fail verification")
+	}
+}
+
+// TestVerifyBranchAuthCookieExpiration tests cookie expiration.
+func TestVerifyBranchAuthCookieExpiration(t *testing.T) {
+	ps := &PagesServer{
+		config: &Config{
+			AuthSecretKey:      "test-secret-key-for-signing-cookies",
+			AuthCookieDuration: 1, // 1 second duration
+		},
+	}
+
+	username := "testuser"
+	repository := "testrepo"
+
+	// Create a cookie with very short duration
+	cookie := ps.createBranchAuthCookie(username, repository)
+
+	// Should be valid immediately
+	if !ps.verifyBranchAuthCookie(cookie.Value, username, repository) {
+		t.Error("Cookie should be valid immediately after creation")
+	}
+
+	// Wait for expiration
+	time.Sleep(2 * time.Second)
+
+	// Should be invalid after expiration
+	if ps.verifyBranchAuthCookie(cookie.Value, username, repository) {
+		t.Error("Cookie should be invalid after expiration")
+	}
+}
+
+// TestIsBranchAuthenticated tests the isBranchAuthenticated function.
+func TestIsBranchAuthenticated(t *testing.T) {
+	ps := &PagesServer{
+		config: &Config{
+			AuthSecretKey:      "test-secret-key-for-signing-cookies",
+			AuthCookieDuration: 3600,
+		},
+	}
+
+	username := "testuser"
+	repository := "testrepo"
+
+	// Request without cookie should not be authenticated
+	req := httptest.NewRequest("GET", "https://example.com/", nil)
+	if ps.isBranchAuthenticated(req, username, repository) {
+		t.Error("Request without cookie should not be authenticated")
+	}
+
+	// Request with valid cookie should be authenticated
+	cookie := ps.createBranchAuthCookie(username, repository)
+	req.AddCookie(cookie)
+	if !ps.isBranchAuthenticated(req, username, repository) {
+		t.Error("Request with valid cookie should be authenticated")
+	}
+
+	// Request with invalid cookie should not be authenticated
+	req2 := httptest.NewRequest("GET", "https://example.com/", nil)
+	invalidCookie := &http.Cookie{
+		Name:  fmt.Sprintf("pages_branch_auth_%s_%s", username, repository),
+		Value: "invalid-cookie-value",
+	}
+	req2.AddCookie(invalidCookie)
+	if ps.isBranchAuthenticated(req2, username, repository) {
+		t.Error("Request with invalid cookie should not be authenticated")
+	}
+
+	// Request with cookie from different repository should not be authenticated
+	req3 := httptest.NewRequest("GET", "https://example.com/", nil)
+	req3.AddCookie(cookie)
+	if ps.isBranchAuthenticated(req3, username, "otherrepo") {
+		t.Error("Request with cookie from different repository should not be authenticated")
+	}
+}
+
+// TestGenerateBranchSignature tests the generateBranchSignature function.
+func TestGenerateBranchSignature(t *testing.T) {
+	ps := &PagesServer{
+		config: &Config{
+			AuthSecretKey: "test-secret-key-for-signing-cookies",
+		},
+	}
+
+	timestamp := "1234567890"
+	username := "testuser"
+	repository := "testrepo"
+	signature := ps.generateBranchSignature(timestamp, username, repository)
+
+	// Should be a valid hex string
+	if len(signature) != 64 {
+		t.Errorf("Expected signature length 64, got %d", len(signature))
+	}
+
+	// Same parameters should produce same signature
+	signature2 := ps.generateBranchSignature(timestamp, username, repository)
+	if signature != signature2 {
+		t.Error("Same parameters should produce same signature")
+	}
+
+	// Different timestamp should produce different signature
+	signature3 := ps.generateBranchSignature("9876543210", username, repository)
+	if signature == signature3 {
+		t.Error("Different timestamps should produce different signatures")
+	}
+
+	// Different repository should produce different signature
+	signature4 := ps.generateBranchSignature(timestamp, username, "otherrepo")
+	if signature == signature4 {
+		t.Error("Different repositories should produce different signatures")
+	}
+}
+
+// TestServeBranchLoginPage tests the serveBranchLoginPage function.
+func TestServeBranchLoginPage(t *testing.T) {
+	ps := &PagesServer{}
+
+	req := httptest.NewRequest("GET", "https://stage.example.com/", nil)
+	rec := httptest.NewRecorder()
+
+	ps.serveBranchLoginPage(rec, req, "")
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if contentType != "text/html; charset=utf-8" {
+		t.Errorf("Expected Content-Type %q, got %q", "text/html; charset=utf-8", contentType)
+	}
+
+	body := rec.Body.String()
+	if body == "" {
+		t.Error("Expected non-empty login page")
+	}
+
+	// Check for expected content
+	expectedStrings := []string{
+		"Branch Access Protected",
+		"password",
+		"Login",
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(body, expected) {
+			t.Errorf("Expected login page to contain %q", expected)
+		}
+	}
+}
+
+// TestServeBranchLoginPageWithError tests the serveBranchLoginPage function with error message.
+func TestServeBranchLoginPageWithError(t *testing.T) {
+	ps := &PagesServer{}
+
+	req := httptest.NewRequest("GET", "https://stage.example.com/", nil)
+	rec := httptest.NewRecorder()
+
+	errorMsg := "Incorrect password"
+	ps.serveBranchLoginPage(rec, req, errorMsg)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, errorMsg) {
+		t.Errorf("Expected login page to contain error message %q", errorMsg)
+	}
+
+	if !strings.Contains(body, "error") {
+		t.Error("Expected login page to have error styling")
 	}
 }

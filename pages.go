@@ -267,43 +267,88 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Check if repository is password protected
-	passwordHash, err := ps.getPasswordHash(req.Context(), username, repository)
-	if err == nil && passwordHash != "" {
-		// Repository is password protected
-		if !ps.isAuthenticated(req, username, repository) {
-			// User is not authenticated
-			if req.Method == "POST" {
-				// Handle password submission
-				if err := req.ParseForm(); err != nil {
-					ps.serveLoginPage(rw, req, username, repository, "Invalid form data")
-					return
-				}
+	// Check password protection:
+	// - Branch requests (branch != ""): use pagesConfig.BranchesPassword from .pages file
+	// - Main branch requests (branch == ""): use pagesConfig.Password from .pages file
+	if branch != "" {
+		// This is a branch subdomain request - check per-repository BranchesPassword
+		// Need to fetch PagesConfig to get branchesPassword
+		pagesConfig, err := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
+		if err == nil && pagesConfig.BranchesPassword != "" {
+			// Branch password protection is enabled for this repository
+			if !ps.isBranchAuthenticated(req, username, repository) {
+				// User is not authenticated for branch access
+				if req.Method == "POST" {
+					// Handle password submission
+					if err := req.ParseForm(); err != nil {
+						ps.serveBranchLoginPage(rw, req, "Invalid form data")
+						return
+					}
 
-				submittedPassword := req.FormValue("password")
-				submittedHash := hashPassword(submittedPassword)
+					submittedPassword := req.FormValue("password")
+					submittedHash := hashPassword(submittedPassword)
 
-				if submittedHash == passwordHash {
-					// Password correct - set auth cookie and redirect
-					cookie := ps.createAuthCookie(username, repository)
-					http.SetCookie(rw, cookie)
+					if submittedHash == pagesConfig.BranchesPassword {
+						// Password correct - set branch auth cookie and redirect
+						cookie := ps.createBranchAuthCookie(username, repository)
+						http.SetCookie(rw, cookie)
 
-					// Redirect to the same URL without POST data
-					redirectURL := req.URL.String()
-					http.Redirect(rw, req, redirectURL, http.StatusSeeOther)
-					return
+						// Redirect to the same URL without POST data
+						redirectURL := req.URL.String()
+						http.Redirect(rw, req, redirectURL, http.StatusSeeOther)
+						return
+					} else {
+						// Password incorrect
+						ps.serveBranchLoginPage(rw, req, "Incorrect password")
+						return
+					}
 				} else {
-					// Password incorrect
-					ps.serveLoginPage(rw, req, username, repository, "Incorrect password")
+					// Show branch login page
+					ps.serveBranchLoginPage(rw, req, "")
 					return
 				}
-			} else {
-				// Show login page
-				ps.serveLoginPage(rw, req, username, repository, "")
-				return
 			}
+			// User is authenticated for branch access, continue to serve content
 		}
-		// User is authenticated, continue to serve content
+	} else {
+		// This is a main branch request - check per-repository password from .pages file
+		passwordHash, err := ps.getPasswordHash(req.Context(), username, repository)
+		if err == nil && passwordHash != "" {
+			// Repository is password protected
+			if !ps.isAuthenticated(req, username, repository) {
+				// User is not authenticated
+				if req.Method == "POST" {
+					// Handle password submission
+					if err := req.ParseForm(); err != nil {
+						ps.serveLoginPage(rw, req, username, repository, "Invalid form data")
+						return
+					}
+
+					submittedPassword := req.FormValue("password")
+					submittedHash := hashPassword(submittedPassword)
+
+					if submittedHash == passwordHash {
+						// Password correct - set auth cookie and redirect
+						cookie := ps.createAuthCookie(username, repository)
+						http.SetCookie(rw, cookie)
+
+						// Redirect to the same URL without POST data
+						redirectURL := req.URL.String()
+						http.Redirect(rw, req, redirectURL, http.StatusSeeOther)
+						return
+					} else {
+						// Password incorrect
+						ps.serveLoginPage(rw, req, username, repository, "Incorrect password")
+						return
+					}
+				} else {
+					// Show login page
+					ps.serveLoginPage(rw, req, username, repository, "")
+					return
+				}
+			}
+			// User is authenticated, continue to serve content
+		}
 	}
 
 	// Check cache first (include branch in cache key for branch-specific content)
@@ -1226,6 +1271,206 @@ func (ps *PagesServer) createAuthCookie(username, repository string) *http.Cooki
 func hashPassword(password string) string {
 	hash := sha256.Sum256([]byte(password))
 	return hex.EncodeToString(hash[:])
+}
+
+// isBranchAuthenticated checks if the request has a valid branch authentication cookie.
+// Cookie is unique per repository to ensure branch passwords are repository-specific.
+func (ps *PagesServer) isBranchAuthenticated(req *http.Request, username, repository string) bool {
+	cookieName := fmt.Sprintf("pages_branch_auth_%s_%s", username, repository)
+	cookie, err := req.Cookie(cookieName)
+	if err != nil {
+		return false
+	}
+
+	// Verify cookie signature
+	return ps.verifyBranchAuthCookie(cookie.Value, username, repository)
+}
+
+// verifyBranchAuthCookie verifies the branch authentication cookie signature.
+// Signature includes username and repository to ensure cookies are repository-specific.
+func (ps *PagesServer) verifyBranchAuthCookie(cookieValue, username, repository string) bool {
+	if ps.config.AuthSecretKey == "" {
+		// If no secret key configured, fall back to simple validation
+		return cookieValue != ""
+	}
+
+	// Cookie format: <timestamp>|<signature>
+	parts := strings.Split(cookieValue, "|")
+	if len(parts) != 2 {
+		return false
+	}
+
+	timestamp := parts[0]
+	signature := parts[1]
+
+	// Check if cookie has expired
+	if !ps.isTimestampValid(timestamp) {
+		return false
+	}
+
+	// Verify signature
+	expectedSignature := ps.generateBranchSignature(timestamp, username, repository)
+	return hmac.Equal([]byte(signature), []byte(expectedSignature))
+}
+
+// generateBranchSignature creates an HMAC signature for the branch auth cookie.
+// Signature includes username and repository to ensure cookies are repository-specific.
+func (ps *PagesServer) generateBranchSignature(timestamp, username, repository string) string {
+	message := fmt.Sprintf("%s:%s:%s:branch", timestamp, username, repository)
+	h := hmac.New(sha256.New, []byte(ps.config.AuthSecretKey))
+	h.Write([]byte(message))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// createBranchAuthCookie creates a signed authentication cookie for branch access.
+// Cookie is unique per repository to ensure branch passwords are repository-specific.
+func (ps *PagesServer) createBranchAuthCookie(username, repository string) *http.Cookie {
+	timestamp := fmt.Sprintf("%d", time.Now().Unix())
+
+	var cookieValue string
+	if ps.config.AuthSecretKey != "" {
+		signature := ps.generateBranchSignature(timestamp, username, repository)
+		cookieValue = fmt.Sprintf("%s|%s", timestamp, signature)
+	} else {
+		// Fallback without signature if no secret key
+		cookieValue = timestamp
+	}
+
+	cookieName := fmt.Sprintf("pages_branch_auth_%s_%s", username, repository)
+
+	return &http.Cookie{
+		Name:     cookieName,
+		Value:    cookieValue,
+		Path:     "/",
+		MaxAge:   ps.config.AuthCookieDuration,
+		HttpOnly: true,
+		Secure:   true, // HTTPS only
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
+// serveBranchLoginPage serves the password login page for branch access.
+func (ps *PagesServer) serveBranchLoginPage(rw http.ResponseWriter, req *http.Request, errorMsg string) {
+	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+	rw.Header().Set("Server", "bovine")
+	rw.WriteHeader(http.StatusOK)
+
+	errorHTML := ""
+	if errorMsg != "" {
+		errorHTML = fmt.Sprintf(`<p class="error">%s</p>`, errorMsg)
+	}
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Branch Access Protected</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            max-width: 400px;
+            width: 100%%;
+        }
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        input[type="password"] {
+            padding: 14px 16px;
+            border: 2px solid #e1e4e8;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%);
+            color: white;
+            padding: 14px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .branch-info {
+            background: #f6f8fa;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #586069;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 Branch Access Protected</h1>
+        <p>This branch subdomain requires authentication</p>
+        <div class="branch-info">
+            <strong>Branch Subdomain Access</strong>
+        </div>
+        %s
+        <form method="POST" action="">
+            <input type="password" name="password" placeholder="Enter branch password" required autofocus>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+</body>
+</html>`, errorHTML)
+
+	rw.Write([]byte(html))
 }
 
 // serveLoginPage serves the password login page.
