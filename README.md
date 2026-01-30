@@ -98,7 +98,7 @@ experimental:
   plugins:
     pages-server:
       moduleName: github.com/sqcows/pages-server
-      version: v0.1.5
+      version: v0.3.2
 ```
 
 ### 2. Configure Let's Encrypt (ACME)

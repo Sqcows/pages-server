@@ -35,7 +35,7 @@ experimental:
   plugins:
     pages-server:
       moduleName: github.com/sqcows/pages-server
-      version: v0.1.5
+      version: v0.3.2
 ```
 
 ### Step 2: Configure Middleware
@@ -131,7 +131,7 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.email=admin@example.com"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--experimental.plugins.pages-server.modulename=github.com/sqcows/pages-server"
-      - "--experimental.plugins.pages-server.version=v0.1.5"
+      - "--experimental.plugins.pages-server.version=v0.3.2"
     ports:
       - "80:80"
       - "443:443"

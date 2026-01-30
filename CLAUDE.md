@@ -77,7 +77,7 @@ This project is licensed under the GNU General Public License v3.0 (GPLv3). All 
 ## Development
 
 ### Version
-Current version: v0.1.5
+Current version: v0.3.2
 
 ### Repository
 https://github.com/sqcows/pages-server
