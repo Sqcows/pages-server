@@ -13,6 +13,7 @@ Environment variables (alternative to CLI args):
 """
 
 import argparse
+import base64
 import os
 import sys
 import time
@@ -66,6 +67,37 @@ class CacheReaper:
             # On error, assume it still exists (don't delete)
             return True
 
+    def get_pages_config(self, username: str, repository: str) -> Optional[dict]:
+        """Fetch and parse the .pages config file from a repository.
+
+        Returns a dict with parsed config fields, or None on error.
+        The 'enabled' field defaults to True if not specified.
+        """
+        url = f"{self.forgejo_host}/api/v1/repos/{username}/{repository}/contents/.pages"
+
+        try:
+            response = self.session.get(url, timeout=10)
+            if response.status_code != 200:
+                return None
+
+            data = response.json()
+            content_b64 = data.get("content", "")
+            # Decode base64 content
+            content = base64.b64decode(content_b64).decode("utf-8", errors="replace")
+
+            # Simple YAML-like parsing (matches Go implementation)
+            config = {"enabled": True}  # Default to enabled
+            for line in content.split("\n"):
+                line = line.strip()
+                if line.startswith("enabled:"):
+                    value = line.split(":", 1)[1].strip().strip("\"'")
+                    config["enabled"] = value in ("true", "yes")
+
+            return config
+        except Exception as e:
+            print(f"  ⚠️  Error fetching .pages config for {username}/{repository}: {e}")
+            return None
+
     def parse_repo_mapping(self, value: str) -> Optional[Tuple[str, str]]:
         """Parse 'username:repository' string into tuple."""
         parts = value.split(":", 1)
@@ -97,9 +129,10 @@ class CacheReaper:
         sanitized_domain = self.sanitize_domain_name(domain)
         traefik_keys = [
             f"traefik/http/routers/custom-{sanitized_domain}/rule",
-            f"traefik/http/routers/custom-{sanitized_domain}/entrypoints/0",
+            f"traefik/http/routers/custom-{sanitized_domain}/entryPoints/0",
+            f"traefik/http/routers/custom-{sanitized_domain}/entryPoints/1",
             f"traefik/http/routers/custom-{sanitized_domain}/service",
-            f"traefik/http/routers/custom-{sanitized_domain}/tls/certresolver",
+            f"traefik/http/routers/custom-{sanitized_domain}/tls/certResolver",
             f"traefik/http/routers/custom-{sanitized_domain}/middlewares/0",
             f"traefik/http/routers/custom-{sanitized_domain}/priority",
         ]
@@ -176,7 +209,14 @@ class CacheReaper:
                     self.delete_domain_mappings(domain, username, repository)
                     cleaned_domains += 1
                 else:
-                    print(f"  ✓ Repository still has .pages file")
+                    # Check if site is disabled (enabled: false)
+                    pages_config = self.get_pages_config(username, repository)
+                    if pages_config and not pages_config.get("enabled", True):
+                        print(f"  ❌ Site is disabled (enabled: false)")
+                        self.delete_domain_mappings(domain, username, repository)
+                        cleaned_domains += 1
+                    else:
+                        print(f"  ✓ Repository has .pages file and is enabled")
 
             if cursor == 0:
                 break

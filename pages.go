@@ -289,6 +289,14 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 		// Parse file path from URL (custom domains serve from repository root)
 		filePath = ps.parseCustomDomainPath(req.URL.Path)
+
+		// Check if site is disabled
+		pagesConfig, configErr := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
+		if configErr == nil && !pagesConfig.Enabled {
+			ps.deregisterSite(req.Context(), username, repository, pagesConfig)
+			ps.serveError(rw, http.StatusNotFound, "Site is not available")
+			return
+		}
 	} else {
 		// Custom domains disabled and not a pagesDomain request
 		ps.serveError(rw, http.StatusBadRequest, "Invalid domain")
@@ -386,10 +394,15 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Verify repository has .pages file
-	hasPages, err := ps.forgejoClient.HasPagesFile(req.Context(), username, repository)
-	if err != nil || !hasPages {
+	// Verify repository has .pages file and is enabled
+	pagesConfig, configErr := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
+	if configErr != nil {
 		ps.serveError(rw, http.StatusNotFound, "Repository not found or not configured for pages")
+		return
+	}
+	if !pagesConfig.Enabled {
+		ps.deregisterSite(req.Context(), username, repository, pagesConfig)
+		ps.serveError(rw, http.StatusNotFound, "Site is not available")
 		return
 	}
 
@@ -545,6 +558,12 @@ func (ps *PagesServer) registerCustomDomain(ctx context.Context, username, repos
 		return
 	}
 
+	// If site is disabled, deregister instead of registering
+	if !pagesConfig.Enabled {
+		ps.deregisterSite(ctx, username, repository, pagesConfig)
+		return
+	}
+
 	// If custom domain is configured, register it
 	if pagesConfig.CustomDomain != "" {
 		// Perform DNS verification if enabled
@@ -671,6 +690,97 @@ func (ps *PagesServer) registerBranchSubdomains(ctx context.Context, username, r
 
 		fmt.Printf("INFO: Registered branch subdomain %s -> %s/%s (branch: %s)\n",
 			branchDomain, username, repository, branch)
+	}
+}
+
+// deregisterSite removes all Redis entries for a disabled site.
+// This includes custom domain mappings, branch subdomain mappings, Traefik router configs,
+// redirect middleware, and password cache entries.
+func (ps *PagesServer) deregisterSite(ctx context.Context, username, repository string, pagesConfig *PagesConfig) {
+	// Look up reverse mapping to find custom domain
+	reverseCacheKey := username + ":" + repository
+	domainBytes, found := ps.customDomainCache.Get(reverseCacheKey)
+
+	if found {
+		customDomain := string(domainBytes)
+
+		// Delete forward mapping: custom_domain:{domain}
+		ps.customDomainCache.Delete("custom_domain:" + customDomain)
+
+		// Delete reverse mapping: username:repository
+		ps.customDomainCache.Delete(reverseCacheKey)
+
+		// Deregister Traefik router for main domain
+		ps.deregisterTraefikRouter(ctx, customDomain)
+
+		// Clean up redirect middleware
+		ps.cleanupRedirectMiddleware(customDomain)
+
+		// Clean up branch subdomains
+		for _, branch := range pagesConfig.EnableBranches {
+			sanitizedBranch := sanitizeBranchForSubdomain(branch)
+			if sanitizedBranch == "" {
+				continue
+			}
+
+			branchDomain := sanitizedBranch + "." + customDomain
+
+			// Delete branch forward mapping
+			ps.customDomainCache.Delete("custom_domain:" + branchDomain)
+
+			// Delete branch reverse mapping
+			branchReverseCacheKey := username + ":" + repository + ":branch:" + branch
+			ps.customDomainCache.Delete(branchReverseCacheKey)
+
+			// Deregister Traefik router for branch subdomain
+			ps.deregisterTraefikRouter(ctx, branchDomain)
+		}
+	}
+
+	// Delete password cache
+	ps.passwordCache.Delete(fmt.Sprintf("password:%s:%s", username, repository))
+
+	fmt.Printf("INFO: Deregistered disabled site %s/%s\n", username, repository)
+}
+
+// cleanupRedirectMiddleware removes redirect middleware keys from Redis for a custom domain.
+func (ps *PagesServer) cleanupRedirectMiddleware(customDomain string) {
+	redisCache, ok := ps.customDomainCache.(*RedisCache)
+	if !ok {
+		return
+	}
+
+	rootKey := ps.config.TraefikRedisRootKey
+	domainSanitized := strings.ReplaceAll(customDomain, ".", "-")
+
+	// Get redirect count from metadata
+	metadataKey := fmt.Sprintf("redirects_meta:%s", customDomain)
+	metadataBytes, found := redisCache.Get(metadataKey)
+	if !found {
+		return
+	}
+
+	// Parse count from "count=N" format
+	var count int
+	if _, err := fmt.Sscanf(string(metadataBytes), "count=%d", &count); err != nil {
+		return
+	}
+
+	// Delete redirect middleware keys
+	for i := 0; i < count; i++ {
+		middlewareName := fmt.Sprintf("redirects-%s-%d", domainSanitized, i)
+		redisCache.Delete(fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/regex", rootKey, middlewareName))
+		redisCache.Delete(fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/replacement", rootKey, middlewareName))
+		redisCache.Delete(fmt.Sprintf("%s/http/middlewares/%s/redirectRegex/permanent", rootKey, middlewareName))
+	}
+
+	// Delete metadata key
+	redisCache.Delete(metadataKey)
+
+	// Delete extra router middleware slots (beyond middlewares/0 which deregisterTraefikRouter handles)
+	routerName := "custom-" + domainSanitized
+	for i := 1; i <= count; i++ {
+		redisCache.Delete(fmt.Sprintf("%s/http/routers/%s/middlewares/%d", rootKey, routerName, i))
 	}
 }
 
@@ -856,6 +966,39 @@ func (ps *PagesServer) registerTraefikRouter(ctx context.Context, customDomain s
 	}
 
 	return nil
+}
+
+// deregisterTraefikRouter removes Traefik router configuration from Redis for a custom domain.
+// This is the inverse of registerTraefikRouter - it deletes all 7 router keys.
+func (ps *PagesServer) deregisterTraefikRouter(ctx context.Context, customDomain string) {
+	if !ps.config.TraefikRedisRouterEnabled {
+		return
+	}
+
+	// Only delete if we have a working Redis cache
+	redisCache, ok := ps.customDomainCache.(*RedisCache)
+	if !ok {
+		return
+	}
+
+	// Create sanitized router name (same as in registerTraefikRouter)
+	routerName := "custom-" + strings.ReplaceAll(customDomain, ".", "-")
+	rootKey := ps.config.TraefikRedisRootKey
+
+	// Delete all router configuration keys from Redis
+	keys := []string{
+		fmt.Sprintf("%s/http/routers/%s/rule", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/entryPoints/0", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/entryPoints/1", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/middlewares/0", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/service", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/tls/certResolver", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/priority", rootKey, routerName),
+	}
+
+	for _, key := range keys {
+		redisCache.Delete(key)
+	}
 }
 
 // parseCustomDomainPath parses the URL path for a custom domain request.

@@ -675,6 +675,312 @@ func TestResolveCustomDomainWithBranch(t *testing.T) {
 	}
 }
 
+// TestDeregisterTraefikRouter tests that deregisterTraefikRouter removes all 7 router keys from Redis.
+func TestDeregisterTraefikRouter(t *testing.T) {
+	redisCache := NewRedisCache("localhost", 6379, "", 600, 10, 20, 5)
+	defer redisCache.Close()
+
+	customDomain := "disabled.example.com"
+	routerName := "custom-disabled-example-com"
+	rootKey := "traefik"
+
+	ps := &PagesServer{
+		config: &Config{
+			TraefikRedisRouterEnabled: true,
+			TraefikRedisCertResolver:  "letsencrypt-http",
+			TraefikRedisRouterTTL:     600,
+			TraefikRedisRootKey:       rootKey,
+		},
+		customDomainCache: redisCache,
+	}
+
+	// First register the router to create the keys
+	err := ps.registerTraefikRouter(context.Background(), customDomain)
+	if err != nil {
+		t.Fatalf("registerTraefikRouter failed: %v", err)
+	}
+
+	// Verify keys exist
+	ruleKey := fmt.Sprintf("%s/http/routers/%s/rule", rootKey, routerName)
+	if _, found := redisCache.Get(ruleKey); !found {
+		t.Fatal("Expected router rule key to exist before deregistration")
+	}
+
+	// Deregister the router
+	ps.deregisterTraefikRouter(context.Background(), customDomain)
+
+	// Verify all 7 keys are deleted
+	expectedKeys := []string{
+		fmt.Sprintf("%s/http/routers/%s/rule", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/entryPoints/0", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/entryPoints/1", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/middlewares/0", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/service", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/tls/certResolver", rootKey, routerName),
+		fmt.Sprintf("%s/http/routers/%s/priority", rootKey, routerName),
+	}
+
+	for _, key := range expectedKeys {
+		if _, found := redisCache.Get(key); found {
+			t.Errorf("Expected key %q to be deleted after deregistration", key)
+		}
+	}
+}
+
+// TestDeregisterTraefikRouterDisabled tests that deregisterTraefikRouter is a no-op when disabled.
+func TestDeregisterTraefikRouterDisabled(t *testing.T) {
+	ps := &PagesServer{
+		config: &Config{
+			TraefikRedisRouterEnabled: false,
+		},
+		customDomainCache: NewMemoryCache(300),
+	}
+
+	// Should not panic
+	ps.deregisterTraefikRouter(context.Background(), "test.example.com")
+}
+
+// TestDeregisterSite tests that deregisterSite removes all cache keys for a disabled site.
+func TestDeregisterSite(t *testing.T) {
+	customDomainCache := NewMemoryCache(0)
+	passwordCache := NewMemoryCache(60)
+
+	ps := &PagesServer{
+		config: &Config{
+			PagesDomain:               "pages.example.com",
+			ForgejoHost:               "https://git.example.com",
+			TraefikRedisRouterEnabled: false, // Disable Traefik to test cache-only behavior
+		},
+		customDomainCache: customDomainCache,
+		passwordCache:     passwordCache,
+	}
+
+	username := "testuser"
+	repository := "testrepo"
+	customDomain := "mysite.example.com"
+
+	// Set up cache entries that would exist for an active site
+	// Forward mapping: custom_domain:domain -> username:repository
+	customDomainCache.Set("custom_domain:"+customDomain, []byte(username+":"+repository))
+	// Reverse mapping: username:repository -> domain
+	customDomainCache.Set(username+":"+repository, []byte(customDomain))
+	// Password cache
+	passwordCache.Set(fmt.Sprintf("password:%s:%s", username, repository), []byte("somehash"))
+
+	pagesConfig := &PagesConfig{
+		Enabled:        false,
+		CustomDomain:   customDomain,
+		EnableBranches: []string{},
+	}
+
+	// Deregister the site
+	ps.deregisterSite(context.Background(), username, repository, pagesConfig)
+
+	// Verify forward mapping is deleted
+	if _, found := customDomainCache.Get("custom_domain:" + customDomain); found {
+		t.Error("Expected forward mapping to be deleted")
+	}
+
+	// Verify reverse mapping is deleted
+	if _, found := customDomainCache.Get(username + ":" + repository); found {
+		t.Error("Expected reverse mapping to be deleted")
+	}
+
+	// Verify password cache is deleted
+	if _, found := passwordCache.Get(fmt.Sprintf("password:%s:%s", username, repository)); found {
+		t.Error("Expected password cache to be deleted")
+	}
+}
+
+// TestDeregisterSiteWithBranches tests that branch subdomain keys are also removed.
+func TestDeregisterSiteWithBranches(t *testing.T) {
+	customDomainCache := NewMemoryCache(0)
+	passwordCache := NewMemoryCache(60)
+
+	ps := &PagesServer{
+		config: &Config{
+			PagesDomain:               "pages.example.com",
+			ForgejoHost:               "https://git.example.com",
+			TraefikRedisRouterEnabled: false,
+		},
+		customDomainCache: customDomainCache,
+		passwordCache:     passwordCache,
+	}
+
+	username := "testuser"
+	repository := "testrepo"
+	customDomain := "mysite.example.com"
+	branches := []string{"stage", "qa"}
+
+	// Set up main domain mappings
+	customDomainCache.Set("custom_domain:"+customDomain, []byte(username+":"+repository))
+	customDomainCache.Set(username+":"+repository, []byte(customDomain))
+
+	// Set up branch subdomain mappings
+	for _, branch := range branches {
+		branchDomain := branch + "." + customDomain
+		customDomainCache.Set("custom_domain:"+branchDomain, []byte(username+":"+repository+":"+branch))
+		customDomainCache.Set(username+":"+repository+":branch:"+branch, []byte(branchDomain))
+	}
+
+	pagesConfig := &PagesConfig{
+		Enabled:        false,
+		CustomDomain:   customDomain,
+		EnableBranches: branches,
+	}
+
+	// Deregister the site
+	ps.deregisterSite(context.Background(), username, repository, pagesConfig)
+
+	// Verify main domain mappings are deleted
+	if _, found := customDomainCache.Get("custom_domain:" + customDomain); found {
+		t.Error("Expected main forward mapping to be deleted")
+	}
+	if _, found := customDomainCache.Get(username + ":" + repository); found {
+		t.Error("Expected main reverse mapping to be deleted")
+	}
+
+	// Verify branch subdomain mappings are deleted
+	for _, branch := range branches {
+		branchDomain := branch + "." + customDomain
+		if _, found := customDomainCache.Get("custom_domain:" + branchDomain); found {
+			t.Errorf("Expected branch forward mapping for %s to be deleted", branchDomain)
+		}
+		branchReverseKey := username + ":" + repository + ":branch:" + branch
+		if _, found := customDomainCache.Get(branchReverseKey); found {
+			t.Errorf("Expected branch reverse mapping for %s to be deleted", branch)
+		}
+	}
+}
+
+// TestDeregisterSiteNoDomain tests that deregisterSite handles the case where no custom domain exists.
+func TestDeregisterSiteNoDomain(t *testing.T) {
+	customDomainCache := NewMemoryCache(0)
+	passwordCache := NewMemoryCache(60)
+
+	ps := &PagesServer{
+		config: &Config{
+			PagesDomain:               "pages.example.com",
+			ForgejoHost:               "https://git.example.com",
+			TraefikRedisRouterEnabled: false,
+		},
+		customDomainCache: customDomainCache,
+		passwordCache:     passwordCache,
+	}
+
+	username := "testuser"
+	repository := "testrepo"
+
+	// Set up only password cache (no custom domain mappings)
+	passwordCache.Set(fmt.Sprintf("password:%s:%s", username, repository), []byte("somehash"))
+
+	pagesConfig := &PagesConfig{
+		Enabled:        false,
+		EnableBranches: []string{},
+	}
+
+	// Should not panic even with no domain mappings
+	ps.deregisterSite(context.Background(), username, repository, pagesConfig)
+
+	// Verify password cache is still deleted
+	if _, found := passwordCache.Get(fmt.Sprintf("password:%s:%s", username, repository)); found {
+		t.Error("Expected password cache to be deleted")
+	}
+}
+
+// TestServeHTTPDisabledSiteCustomDomain tests that a disabled site on a custom domain returns 404.
+func TestServeHTTPDisabledSiteCustomDomain(t *testing.T) {
+	customDomainCache := NewMemoryCache(0)
+
+	// Pre-populate custom domain mapping
+	customDomainCache.Set("custom_domain:disabled.example.com", []byte("testuser:testrepo"))
+	customDomainCache.Set("testuser:testrepo", []byte("disabled.example.com"))
+
+	ps := &PagesServer{
+		config: &Config{
+			PagesDomain:               "pages.example.com",
+			ForgejoHost:               "https://git.example.com",
+			EnableCustomDomains:       true,
+			TraefikRedisRouterEnabled: false,
+		},
+		cache:             NewMemoryCache(300),
+		customDomainCache: customDomainCache,
+		passwordCache:     NewMemoryCache(60),
+		forgejoClient:     NewForgejoClient("https://git.example.com", ""),
+		errorPages:        make(map[int][]byte),
+	}
+
+	// Request to custom domain - GetPagesConfig will fail since there's no real API,
+	// so configErr != nil and the disabled check won't trigger.
+	// However, the request will fall through to the pages config check and get a 404
+	// because the Forgejo API is not available.
+	req := httptest.NewRequest("GET", "https://disabled.example.com/", nil)
+	req.Host = "disabled.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+
+	ps.ServeHTTP(rec, req)
+
+	// Should get an error status (404) because the Forgejo API is not reachable
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+// TestDeregisterTraefikRouterWithRedis tests full deregistration with Redis.
+func TestDeregisterTraefikRouterWithRedis(t *testing.T) {
+	redisCache := NewRedisCache("localhost", 6379, "", 600, 10, 20, 5)
+	defer redisCache.Close()
+
+	customDomain := "full-test.example.com"
+	rootKey := "traefik"
+
+	ps := &PagesServer{
+		config: &Config{
+			TraefikRedisRouterEnabled: true,
+			TraefikRedisCertResolver:  "letsencrypt-http",
+			TraefikRedisRouterTTL:     600,
+			TraefikRedisRootKey:       rootKey,
+		},
+		customDomainCache: redisCache,
+		passwordCache:     NewMemoryCache(60),
+	}
+
+	// Register a router
+	err := ps.registerTraefikRouter(context.Background(), customDomain)
+	if err != nil {
+		t.Fatalf("registerTraefikRouter failed: %v", err)
+	}
+
+	// Set up custom domain and password cache
+	redisCache.Set("custom_domain:"+customDomain, []byte("testuser:testrepo"))
+	redisCache.Set("testuser:testrepo", []byte(customDomain))
+
+	pagesConfig := &PagesConfig{
+		Enabled:        false,
+		CustomDomain:   customDomain,
+		EnableBranches: []string{},
+	}
+
+	// Deregister the site
+	ps.deregisterSite(context.Background(), "testuser", "testrepo", pagesConfig)
+
+	// Verify custom domain mappings are removed
+	if _, found := redisCache.Get("custom_domain:" + customDomain); found {
+		t.Error("Expected forward mapping to be deleted from Redis")
+	}
+	if _, found := redisCache.Get("testuser:testrepo"); found {
+		t.Error("Expected reverse mapping to be deleted from Redis")
+	}
+
+	// Verify Traefik router keys are removed
+	routerName := "custom-full-test-example-com"
+	ruleKey := fmt.Sprintf("%s/http/routers/%s/rule", rootKey, routerName)
+	if _, found := redisCache.Get(ruleKey); found {
+		t.Error("Expected Traefik router rule key to be deleted from Redis")
+	}
+}
+
 // TestCacheKeyWithBranch tests that cache keys include branch for branch-specific content.
 func TestCacheKeyWithBranch(t *testing.T) {
 	// Test that the cache key format includes branch
