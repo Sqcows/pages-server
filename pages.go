@@ -315,6 +315,33 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Check if site is disabled (must happen BEFORE password check and content cache)
+	enabledCacheKey := fmt.Sprintf("enabled:%s:%s", username, repository)
+	cachedEnabled, enabledCacheFound := ps.passwordCache.Get(enabledCacheKey)
+	if !enabledCacheFound {
+		// Cache miss - must check API before proceeding
+		enabledConfig, enabledErr := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
+		if enabledErr != nil {
+			ps.serveError(rw, http.StatusNotFound, "Repository not found or not configured for pages")
+			return
+		}
+		if !enabledConfig.Enabled {
+			ps.passwordCache.Set(enabledCacheKey, []byte("false"))
+			ps.deregisterSite(req.Context(), username, repository, enabledConfig)
+			ps.serveError(rw, http.StatusNotFound, "Site is not available")
+			return
+		}
+		ps.passwordCache.Set(enabledCacheKey, []byte("true"))
+	} else if string(cachedEnabled) == "false" {
+		// Cached as disabled - deregister and return 404
+		disabledConfig, _ := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
+		if disabledConfig != nil {
+			ps.deregisterSite(req.Context(), username, repository, disabledConfig)
+		}
+		ps.serveError(rw, http.StatusNotFound, "Site is not available")
+		return
+	}
+
 	// Check password protection:
 	// - Branch requests (branch != ""): use pagesConfig.BranchesPassword from .pages file
 	// - Main branch requests (branch == ""): use pagesConfig.Password from .pages file
@@ -399,19 +426,6 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Check if site is disabled (cached check, 60-second TTL via passwordCache)
-	enabledCacheKey := fmt.Sprintf("enabled:%s:%s", username, repository)
-	if cachedEnabled, found := ps.passwordCache.Get(enabledCacheKey); found {
-		if string(cachedEnabled) == "false" {
-			pagesConfig, _ := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
-			if pagesConfig != nil {
-				ps.deregisterSite(req.Context(), username, repository, pagesConfig)
-			}
-			ps.serveError(rw, http.StatusNotFound, "Site is not available")
-			return
-		}
-	}
-
 	// Check cache first (include branch in cache key for branch-specific content)
 	cacheKey := fmt.Sprintf("%s:%s:%s:%s", username, repository, branch, filePath)
 	if cached, found := ps.cache.Get(cacheKey); found {
@@ -419,20 +433,12 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Verify repository has .pages file and is enabled
-	pagesConfig, configErr := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
-	if configErr != nil {
+	// Verify repository has .pages file (enabled status already checked above)
+	hasPagesFile, pagesFileErr := ps.forgejoClient.HasPagesFile(req.Context(), username, repository)
+	if pagesFileErr != nil || !hasPagesFile {
 		ps.serveError(rw, http.StatusNotFound, "Repository not found or not configured for pages")
 		return
 	}
-	if !pagesConfig.Enabled {
-		ps.passwordCache.Set(enabledCacheKey, []byte("false"))
-		ps.deregisterSite(req.Context(), username, repository, pagesConfig)
-		ps.serveError(rw, http.StatusNotFound, "Site is not available")
-		return
-	}
-	// Cache that the site is enabled
-	ps.passwordCache.Set(enabledCacheKey, []byte("true"))
 
 	// Get the file content from Forgejo (use branch-aware method)
 	content, contentType, err := ps.forgejoClient.GetFileContentFromBranch(req.Context(), username, repository, filePath, branch)
@@ -772,8 +778,12 @@ func (ps *PagesServer) deregisterSite(ctx context.Context, username, repository 
 	contentCachePrefix := username + ":" + repository + ":"
 	ps.cache.DeleteByPrefix(contentCachePrefix)
 
-	// Delete password cache
+	// Delete password and enabled status caches
 	ps.passwordCache.Delete(fmt.Sprintf("password:%s:%s", username, repository))
+	ps.passwordCache.Delete(fmt.Sprintf("enabled:%s:%s", username, repository))
+
+	// Delete settings cache (uses / separator)
+	ps.customDomainCache.Delete(fmt.Sprintf("settings:%s/%s", username, repository))
 
 	fmt.Printf("INFO: Deregistered disabled site %s/%s\n", username, repository)
 }
