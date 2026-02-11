@@ -58,7 +58,7 @@ enable_branches:            # Optional: branch subdomains (requires custom_domai
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enabled` | boolean | No | Enable/disable pages for this repository (default: true) |
+| `enabled` | boolean | No | Enable/disable pages for this repository (default: true). When set to `false`, the site returns 404 and all cached data (custom domain mappings, Traefik routers, redirect middleware, password cache) is automatically cleaned up. |
 | `custom_domain` | string | No | Custom domain for this site |
 | `password` | string | No | SHA256 hash for password protection (main branch only) |
 | `branchesPassword` | string | No | SHA256 hash for password protection (non-main branches only) |
@@ -98,7 +98,7 @@ experimental:
   plugins:
     pages-server:
       moduleName: github.com/sqcows/pages-server
-      version: v0.3.2
+      version: v0.3.3
 ```
 
 ### 2. Configure Let's Encrypt (ACME)
@@ -223,6 +223,53 @@ http:
 | `authSecretKey` | string | "" | Secret key for HMAC cookie signing (recommended for password protection security) |
 | `enableCustomDomainDNSVerification` | bool | false | Enable DNS TXT record verification for custom domains (prevents domain hijacking) |
 | `maxRedirects` | int | 25 | Maximum number of redirect rules to read from `.redirects` file (resource exhaustion protection) |
+
+## Disabling a Site
+
+You can disable a site by setting `enabled: false` in the repository's `.pages` file. This immediately stops serving the site and cleans up all associated cached data.
+
+### How It Works
+
+1. **Set `enabled: false`** in your `.pages` file:
+   ```yaml
+   enabled: false
+   ```
+
+2. **Commit and push** the change:
+   ```bash
+   git add .pages
+   git commit -m "Disable pages site"
+   git push
+   ```
+
+3. **On the next request** to either the pages domain URL or custom domain URL, the plugin will:
+   - Return a 404 "Site is not available" response
+   - Remove the custom domain forward mapping (`custom_domain:{domain}`)
+   - Remove the custom domain reverse mapping (`username:repository`)
+   - Remove the Traefik router configuration for the custom domain
+   - Remove any redirect middleware rules
+   - Remove branch subdomain mappings and their Traefik routers
+   - Remove cached password entries
+
+Content cache entries (file content with a default TTL of 300 seconds) are left to expire naturally.
+
+### Re-enabling a Site
+
+To re-enable a site, set `enabled: true` (or remove the `enabled` field, since `true` is the default):
+
+```yaml
+enabled: true
+custom_domain: www.example.com
+```
+
+After pushing the change, visit the pages URL to re-register the custom domain:
+```
+https://username.pages.example.com/repository
+```
+
+### Reaper Integration
+
+The cache reaper script also checks for `enabled: false` when scanning for stale domain mappings. Sites with `enabled: false` in their `.pages` file are cleaned up during reaper runs, even if the `.pages` file still exists.
 
 ## Custom Domain Redirects
 

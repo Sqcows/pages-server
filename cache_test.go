@@ -161,6 +161,62 @@ func TestMemoryCacheClear(t *testing.T) {
 	}
 }
 
+// TestMemoryCacheDeleteByPrefix tests the DeleteByPrefix method.
+func TestMemoryCacheDeleteByPrefix(t *testing.T) {
+	cache := NewMemoryCache(300)
+	defer cache.Stop()
+
+	// Set multiple values with different prefixes
+	cache.Set("user1:repo1:branch1:file1.html", []byte("content1"))
+	cache.Set("user1:repo1:branch1:file2.html", []byte("content2"))
+	cache.Set("user1:repo1:branch2:file3.html", []byte("content3"))
+	cache.Set("user1:repo2:branch1:file4.html", []byte("content4"))
+	cache.Set("user2:repo1:branch1:file5.html", []byte("content5"))
+
+	// Delete all entries for user1:repo1:
+	cache.DeleteByPrefix("user1:repo1:")
+
+	// Verify user1:repo1 entries are gone
+	if _, found := cache.Get("user1:repo1:branch1:file1.html"); found {
+		t.Error("Expected user1:repo1:branch1:file1.html to be deleted")
+	}
+	if _, found := cache.Get("user1:repo1:branch1:file2.html"); found {
+		t.Error("Expected user1:repo1:branch1:file2.html to be deleted")
+	}
+	if _, found := cache.Get("user1:repo1:branch2:file3.html"); found {
+		t.Error("Expected user1:repo1:branch2:file3.html to be deleted")
+	}
+
+	// Verify other entries remain
+	if _, found := cache.Get("user1:repo2:branch1:file4.html"); !found {
+		t.Error("Expected user1:repo2:branch1:file4.html to remain")
+	}
+	if _, found := cache.Get("user2:repo1:branch1:file5.html"); !found {
+		t.Error("Expected user2:repo1:branch1:file5.html to remain")
+	}
+}
+
+// TestMemoryCacheDeleteByPrefixNoMatch tests DeleteByPrefix with no matching keys.
+func TestMemoryCacheDeleteByPrefixNoMatch(t *testing.T) {
+	cache := NewMemoryCache(300)
+	defer cache.Stop()
+
+	// Set some values
+	cache.Set("key1", []byte("value1"))
+	cache.Set("key2", []byte("value2"))
+
+	// Delete with non-matching prefix (should not affect existing keys)
+	cache.DeleteByPrefix("nonexistent:")
+
+	// Verify existing keys remain
+	if _, found := cache.Get("key1"); !found {
+		t.Error("Expected key1 to remain")
+	}
+	if _, found := cache.Get("key2"); !found {
+		t.Error("Expected key2 to remain")
+	}
+}
+
 // TestMemoryCacheJanitor tests that the janitor cleans up expired items.
 func TestMemoryCacheJanitor(t *testing.T) {
 	cache := NewMemoryCache(1) // 1 second TTL
@@ -821,4 +877,137 @@ func TestRedisCacheFallbackOnConnectionExhaustion(t *testing.T) {
 	if string(got) != string(value) {
 		t.Errorf("Expected value %q, got %q", string(value), string(got))
 	}
+}
+
+// TestRedisCacheDeleteByPrefix tests the DeleteByPrefix method with Redis.
+func TestRedisCacheDeleteByPrefix(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
+	defer cache.Close()
+
+	// Set multiple values with different prefixes
+	cache.Set("prefix-test:user1:repo1:branch1:file1.html", []byte("content1"))
+	cache.Set("prefix-test:user1:repo1:branch1:file2.html", []byte("content2"))
+	cache.Set("prefix-test:user1:repo1:branch2:file3.html", []byte("content3"))
+	cache.Set("prefix-test:user1:repo2:branch1:file4.html", []byte("content4"))
+	cache.Set("prefix-test:user2:repo1:branch1:file5.html", []byte("content5"))
+
+	// Delete all entries for prefix-test:user1:repo1:
+	cache.DeleteByPrefix("prefix-test:user1:repo1:")
+
+	// Verify prefix-test:user1:repo1 entries are gone
+	if _, found := cache.Get("prefix-test:user1:repo1:branch1:file1.html"); found {
+		t.Error("Expected prefix-test:user1:repo1:branch1:file1.html to be deleted")
+	}
+	if _, found := cache.Get("prefix-test:user1:repo1:branch1:file2.html"); found {
+		t.Error("Expected prefix-test:user1:repo1:branch1:file2.html to be deleted")
+	}
+	if _, found := cache.Get("prefix-test:user1:repo1:branch2:file3.html"); found {
+		t.Error("Expected prefix-test:user1:repo1:branch2:file3.html to be deleted")
+	}
+
+	// Verify other entries remain
+	if _, found := cache.Get("prefix-test:user1:repo2:branch1:file4.html"); !found {
+		t.Error("Expected prefix-test:user1:repo2:branch1:file4.html to remain")
+	}
+	if _, found := cache.Get("prefix-test:user2:repo1:branch1:file5.html"); !found {
+		t.Error("Expected prefix-test:user2:repo1:branch1:file5.html to remain")
+	}
+
+	// Clean up remaining keys
+	cache.Delete("prefix-test:user1:repo2:branch1:file4.html")
+	cache.Delete("prefix-test:user2:repo1:branch1:file5.html")
+}
+
+// TestRedisCacheDeleteByPrefixNoMatch tests DeleteByPrefix with no matching keys.
+func TestRedisCacheDeleteByPrefixNoMatch(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
+	defer cache.Close()
+
+	// Set some values
+	cache.Set("prefix-test:key1", []byte("value1"))
+	cache.Set("prefix-test:key2", []byte("value2"))
+
+	// Delete with non-matching prefix (should not affect existing keys)
+	cache.DeleteByPrefix("prefix-test:nonexistent:")
+
+	// Verify existing keys remain
+	if _, found := cache.Get("prefix-test:key1"); !found {
+		t.Error("Expected prefix-test:key1 to remain")
+	}
+	if _, found := cache.Get("prefix-test:key2"); !found {
+		t.Error("Expected prefix-test:key2 to remain")
+	}
+
+	// Clean up
+	cache.Delete("prefix-test:key1")
+	cache.Delete("prefix-test:key2")
+}
+
+// TestRedisCacheDeleteByPrefixFallback tests DeleteByPrefix fallback when Redis is unavailable.
+func TestRedisCacheDeleteByPrefixFallback(t *testing.T) {
+	// Connect to a non-existent Redis server
+	cache := NewRedisCache("localhost", 9999, "", 300, 10, 20, 5)
+	defer cache.Close()
+
+	// Set values in fallback cache
+	cache.Set("fallback-prefix:key1", []byte("value1"))
+	cache.Set("fallback-prefix:key2", []byte("value2"))
+	cache.Set("other-prefix:key3", []byte("value3"))
+
+	// DeleteByPrefix should work on fallback cache
+	cache.DeleteByPrefix("fallback-prefix:")
+
+	// Verify fallback-prefix keys are gone
+	if _, found := cache.Get("fallback-prefix:key1"); found {
+		t.Error("Expected fallback-prefix:key1 to be deleted from fallback cache")
+	}
+	if _, found := cache.Get("fallback-prefix:key2"); found {
+		t.Error("Expected fallback-prefix:key2 to be deleted from fallback cache")
+	}
+
+	// Verify other key remains
+	if _, found := cache.Get("other-prefix:key3"); !found {
+		t.Error("Expected other-prefix:key3 to remain in fallback cache")
+	}
+}
+
+// TestRedisCacheDeleteByPrefixLargeSet tests DeleteByPrefix with many keys.
+func TestRedisCacheDeleteByPrefixLargeSet(t *testing.T) {
+	cache := NewRedisCache("localhost", 6379, "", 300, 10, 20, 5)
+	defer cache.Close()
+
+	// Set many values with same prefix
+	prefix := "large-set-test:"
+	for i := 0; i < 150; i++ {
+		key := fmt.Sprintf("%skey-%d", prefix, i)
+		value := []byte(fmt.Sprintf("value-%d", i))
+		cache.Set(key, value)
+	}
+
+	// Also set some keys with different prefix
+	cache.Set("other:key1", []byte("other-value1"))
+	cache.Set("other:key2", []byte("other-value2"))
+
+	// Delete all entries with the prefix
+	cache.DeleteByPrefix(prefix)
+
+	// Verify all prefixed keys are deleted
+	for i := 0; i < 150; i++ {
+		key := fmt.Sprintf("%skey-%d", prefix, i)
+		if _, found := cache.Get(key); found {
+			t.Errorf("Expected %s to be deleted", key)
+		}
+	}
+
+	// Verify other keys remain
+	if _, found := cache.Get("other:key1"); !found {
+		t.Error("Expected other:key1 to remain")
+	}
+	if _, found := cache.Get("other:key2"); !found {
+		t.Error("Expected other:key2 to remain")
+	}
+
+	// Clean up
+	cache.Delete("other:key1")
+	cache.Delete("other:key2")
 }

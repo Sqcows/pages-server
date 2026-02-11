@@ -31,6 +31,7 @@ type Cache interface {
 	Get(key string) ([]byte, bool)
 	Set(key string, value []byte)
 	Delete(key string)
+	DeleteByPrefix(prefix string)
 	Clear()
 }
 
@@ -121,6 +122,19 @@ func (mc *MemoryCache) Delete(key string) {
 	defer mc.mu.Unlock()
 
 	delete(mc.items, key)
+}
+
+// DeleteByPrefix removes all items from the cache whose keys start with the given prefix.
+func (mc *MemoryCache) DeleteByPrefix(prefix string) {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	// Iterate through all items and delete those with matching prefix
+	for key := range mc.items {
+		if strings.HasPrefix(key, prefix) {
+			delete(mc.items, key)
+		}
+	}
 }
 
 // Clear removes all items from the cache.
@@ -555,6 +569,92 @@ func (rc *RedisCache) Delete(key string) {
 
 	// Also delete from fallback cache
 	rc.fallback.Delete(key)
+}
+
+// DeleteByPrefix removes all items from Redis cache whose keys start with the given prefix.
+// Uses SCAN with MATCH pattern to avoid blocking the server (unlike KEYS).
+func (rc *RedisCache) DeleteByPrefix(prefix string) {
+	conn, err := rc.getConnection()
+	if err != nil {
+		// Fall back to in-memory cache if Redis is unavailable
+		rc.fallback.DeleteByPrefix(prefix)
+		return
+	}
+	defer rc.releaseConnection(conn)
+
+	// Use SCAN to iterate through matching keys
+	// SCAN cursor MATCH pattern COUNT count
+	cursor := "0"
+	pattern := prefix + "*"
+	keysToDelete := []string{}
+
+	// Loop until cursor returns to 0
+	for {
+		// Send SCAN command
+		err = rc.sendCommand(conn, "SCAN", cursor, "MATCH", pattern, "COUNT", "100")
+		if err != nil {
+			rc.fallback.DeleteByPrefix(prefix)
+			return
+		}
+
+		// Read SCAN response: [cursor_string, [key1, key2, ...]]
+		resp, err := rc.readResponse(conn)
+		if err != nil {
+			rc.fallback.DeleteByPrefix(prefix)
+			return
+		}
+
+		// Parse response array
+		respArray, ok := resp.([]interface{})
+		if !ok || len(respArray) != 2 {
+			rc.fallback.DeleteByPrefix(prefix)
+			return
+		}
+
+		// Extract new cursor
+		cursorBytes, ok := respArray[0].([]byte)
+		if !ok {
+			rc.fallback.DeleteByPrefix(prefix)
+			return
+		}
+		cursor = string(cursorBytes)
+
+		// Extract keys array
+		keysArray, ok := respArray[1].([]interface{})
+		if !ok {
+			rc.fallback.DeleteByPrefix(prefix)
+			return
+		}
+
+		// Collect keys to delete
+		for _, keyInterface := range keysArray {
+			if keyBytes, ok := keyInterface.([]byte); ok {
+				keysToDelete = append(keysToDelete, string(keyBytes))
+			}
+		}
+
+		// If cursor is "0", we've completed the scan
+		if cursor == "0" {
+			break
+		}
+	}
+
+	// Delete all collected keys
+	for _, key := range keysToDelete {
+		err = rc.sendCommand(conn, "DEL", key)
+		if err != nil {
+			continue // Try to delete remaining keys even if one fails
+		}
+
+		// Read DEL response
+		_, err = rc.readResponse(conn)
+		if err != nil {
+			continue
+		}
+	}
+
+	// Also delete from fallback cache
+	rc.fallback.DeleteByPrefix(prefix)
 }
 
 // Clear removes all items from Redis cache.

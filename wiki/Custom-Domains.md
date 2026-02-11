@@ -239,6 +239,21 @@ Use external reaper scripts to validate and clean up inactive domains:
 
 See the `reaper/` directory for cleanup scripts.
 
+## Disabling a Site with Custom Domain
+
+When a site is disabled by setting `enabled: false` in the `.pages` file, all custom domain data is automatically cleaned up:
+
+- Forward mapping (`custom_domain:{domain}`) is deleted
+- Reverse mapping (`username:repository`) is deleted
+- Traefik router configuration for the domain is removed
+- Branch subdomain mappings and their Traefik routers are removed
+- Redirect middleware rules are removed
+- Password cache entries are removed
+
+This happens automatically on the next request to the site. The reaper script also detects `enabled: false` during its periodic scans.
+
+To re-enable, set `enabled: true` and visit the pages URL to re-register the custom domain.
+
 ## Conflict Prevention
 
 The plugin prevents custom domain conflicts:

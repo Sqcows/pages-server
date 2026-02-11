@@ -8,7 +8,8 @@ The reaper script:
 
 1. **Scans Redis** for all custom domain mappings (`custom_domain:*` keys)
 2. **Checks each repository** via Forgejo API to see if it still has a `.pages` file
-3. **Removes stale mappings** when a repository no longer has a `.pages` file:
+3. **Checks if the site is disabled** (`enabled: false` in the `.pages` file)
+4. **Removes stale mappings** when a repository no longer has a `.pages` file or has `enabled: false`:
    - Forward mapping: `custom_domain:{domain}`
    - Reverse mapping: `{username}:{repository}`
    - Traefik router configurations: `traefik/http/routers/custom-{domain}/*`
@@ -95,17 +96,24 @@ Example output:
 
 📋 example.com -> user1/repo1
   ❌ Repository no longer has .pages file
-  🔍 [DRY RUN] Would delete 7 keys:
+  🔍 [DRY RUN] Would delete 9 keys:
      - custom_domain:example.com
      - user1:repo1
      - traefik/http/routers/custom-example-com/rule
-     - traefik/http/routers/custom-example-com/entrypoints/0
+     - traefik/http/routers/custom-example-com/entryPoints/0
+     - traefik/http/routers/custom-example-com/entryPoints/1
      - traefik/http/routers/custom-example-com/service
-     - traefik/http/routers/custom-example-com/tls/certresolver
+     - traefik/http/routers/custom-example-com/tls/certResolver
      - traefik/http/routers/custom-example-com/middlewares/0
+     - traefik/http/routers/custom-example-com/priority
+
+📋 disabled.com -> user2/disabled-site
+  ❌ Site is disabled (enabled: false)
+  🔍 [DRY RUN] Would delete 9 keys:
+     ...
 
 📋 squarecows.com -> squarecows/sqcows-web
-  ✓ Repository still has .pages file
+  ✓ Repository has .pages file and is enabled
 
 ============================================================
 📊 REAPER SUMMARY
@@ -262,14 +270,16 @@ Successful run:
      ✓ Deleted: custom_domain:example.com
      ✓ Deleted: user1:old-repo
      ✓ Deleted: traefik/http/routers/custom-example-com/rule
-     ✓ Deleted: traefik/http/routers/custom-example-com/entrypoints/0
+     ✓ Deleted: traefik/http/routers/custom-example-com/entryPoints/0
+     ✓ Deleted: traefik/http/routers/custom-example-com/entryPoints/1
      ✓ Deleted: traefik/http/routers/custom-example-com/service
-     ✓ Deleted: traefik/http/routers/custom-example-com/tls/certresolver
+     ✓ Deleted: traefik/http/routers/custom-example-com/tls/certResolver
      ✓ Deleted: traefik/http/routers/custom-example-com/middlewares/0
-  ✓ Deleted 7/7 keys
+     ✓ Deleted: traefik/http/routers/custom-example-com/priority
+  ✓ Deleted 9/9 keys
 
 📋 squarecows.com -> squarecows/sqcows-web
-  ✓ Repository still has .pages file
+  ✓ Repository has .pages file and is enabled
 
 ============================================================
 📊 REAPER SUMMARY

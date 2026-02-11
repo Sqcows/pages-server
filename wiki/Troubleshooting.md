@@ -283,6 +283,29 @@ This page covers common issues and their solutions when using Bovine Pages Serve
 
 ## Common Error Messages
 
+### "Site is not available"
+
+The site has been disabled by setting `enabled: false` in its `.pages` file.
+
+**Solutions:**
+
+1. **Check the `.pages` file** in the repository:
+   ```yaml
+   enabled: false   # This disables the site
+   ```
+
+2. **To re-enable**, change to `enabled: true` or remove the `enabled` field:
+   ```yaml
+   enabled: true
+   ```
+
+3. **Re-register the custom domain** by visiting the pages URL:
+   ```
+   https://username.pages.example.com/repository
+   ```
+
+4. **Note**: When a site is disabled, all cached data (custom domain mappings, Traefik routers, redirect middleware, password cache) is automatically cleaned up. Re-enabling requires re-registration.
+
 ### "Repository not found or not configured for pages"
 
 - Repository doesn't exist

@@ -744,6 +744,7 @@ func TestDeregisterTraefikRouterDisabled(t *testing.T) {
 func TestDeregisterSite(t *testing.T) {
 	customDomainCache := NewMemoryCache(0)
 	passwordCache := NewMemoryCache(60)
+	contentCache := NewMemoryCache(300)
 
 	ps := &PagesServer{
 		config: &Config{
@@ -751,6 +752,7 @@ func TestDeregisterSite(t *testing.T) {
 			ForgejoHost:               "https://git.example.com",
 			TraefikRedisRouterEnabled: false, // Disable Traefik to test cache-only behavior
 		},
+		cache:             contentCache,
 		customDomainCache: customDomainCache,
 		passwordCache:     passwordCache,
 	}
@@ -766,6 +768,12 @@ func TestDeregisterSite(t *testing.T) {
 	customDomainCache.Set(username+":"+repository, []byte(customDomain))
 	// Password cache
 	passwordCache.Set(fmt.Sprintf("password:%s:%s", username, repository), []byte("somehash"))
+	// Content cache entries
+	contentCache.Set(username+":"+repository+":branch1:file1.html", []byte("content1"))
+	contentCache.Set(username+":"+repository+":branch1:file2.html", []byte("content2"))
+	contentCache.Set(username+":"+repository+":branch2:file3.html", []byte("content3"))
+	// Some other user's content (should not be deleted)
+	contentCache.Set("otheruser:otherrepo:branch1:file1.html", []byte("other-content"))
 
 	pagesConfig := &PagesConfig{
 		Enabled:        false,
@@ -790,12 +798,29 @@ func TestDeregisterSite(t *testing.T) {
 	if _, found := passwordCache.Get(fmt.Sprintf("password:%s:%s", username, repository)); found {
 		t.Error("Expected password cache to be deleted")
 	}
+
+	// Verify content cache entries for this site are deleted
+	if _, found := contentCache.Get(username + ":" + repository + ":branch1:file1.html"); found {
+		t.Error("Expected content cache entry to be deleted")
+	}
+	if _, found := contentCache.Get(username + ":" + repository + ":branch1:file2.html"); found {
+		t.Error("Expected content cache entry to be deleted")
+	}
+	if _, found := contentCache.Get(username + ":" + repository + ":branch2:file3.html"); found {
+		t.Error("Expected content cache entry to be deleted")
+	}
+
+	// Verify other user's content remains
+	if _, found := contentCache.Get("otheruser:otherrepo:branch1:file1.html"); !found {
+		t.Error("Expected other user's content cache entry to remain")
+	}
 }
 
 // TestDeregisterSiteWithBranches tests that branch subdomain keys are also removed.
 func TestDeregisterSiteWithBranches(t *testing.T) {
 	customDomainCache := NewMemoryCache(0)
 	passwordCache := NewMemoryCache(60)
+	contentCache := NewMemoryCache(300)
 
 	ps := &PagesServer{
 		config: &Config{
@@ -803,6 +828,7 @@ func TestDeregisterSiteWithBranches(t *testing.T) {
 			ForgejoHost:               "https://git.example.com",
 			TraefikRedisRouterEnabled: false,
 		},
+		cache:             contentCache,
 		customDomainCache: customDomainCache,
 		passwordCache:     passwordCache,
 	}
@@ -857,6 +883,7 @@ func TestDeregisterSiteWithBranches(t *testing.T) {
 func TestDeregisterSiteNoDomain(t *testing.T) {
 	customDomainCache := NewMemoryCache(0)
 	passwordCache := NewMemoryCache(60)
+	contentCache := NewMemoryCache(300)
 
 	ps := &PagesServer{
 		config: &Config{
@@ -864,6 +891,7 @@ func TestDeregisterSiteNoDomain(t *testing.T) {
 			ForgejoHost:               "https://git.example.com",
 			TraefikRedisRouterEnabled: false,
 		},
+		cache:             contentCache,
 		customDomainCache: customDomainCache,
 		passwordCache:     passwordCache,
 	}

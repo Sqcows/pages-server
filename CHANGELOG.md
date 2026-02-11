@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.3] - 2025-02-10
+
+### Added
+- **Enforce `enabled: false` in `.pages` File**: Sites can now be fully disabled by setting `enabled: false`
+  - When `enabled: false` is set, the site returns 404 "Site is not available" for all requests
+  - All cached data is automatically cleaned up when a site is disabled:
+    - Custom domain forward and reverse mappings
+    - Traefik router configurations for main domain and branch subdomains
+    - Redirect middleware rules and metadata
+    - Password cache entries
+  - Cleanup occurs on three paths: pages domain requests, custom domain requests, and `registerCustomDomain`
+  - Content cache entries (TTL=300s) are left to expire naturally
+  - Replaced `HasPagesFile` with `GetPagesConfig` in pages domain path to avoid double API calls
+  - New functions: `deregisterSite()`, `deregisterTraefikRouter()`, `cleanupRedirectMiddleware()`
+
+### Fixed
+- **Reaper Script Key Casing**: Fixed incorrect Redis key casing in reaper script
+  - `entrypoints` → `entryPoints` (camelCase to match Go implementation)
+  - `certresolver` → `certResolver` (camelCase to match Go implementation)
+  - Added missing `entryPoints/1` key to deletion list
+- **Reaper Script `enabled: false` Support**: Reaper now checks if sites are disabled
+  - Added `get_pages_config()` method to fetch and parse `.pages` file content
+  - Scans for `enabled: false` in addition to missing `.pages` files
+  - Disabled sites are cleaned up the same as sites without `.pages` files
+
+### Tests
+- Added `TestDeregisterTraefikRouter` - verifies all 7 Traefik router keys are deleted
+- Added `TestDeregisterTraefikRouterDisabled` - verifies no-op when feature is disabled
+- Added `TestDeregisterSite` - verifies domain mappings and password cache are cleaned up
+- Added `TestDeregisterSiteWithBranches` - verifies branch subdomain keys are also removed
+- Added `TestDeregisterSiteNoDomain` - verifies no panic when no domain mapping exists
+- Added `TestServeHTTPDisabledSiteCustomDomain` - verifies 404 for disabled custom domain sites
+- Added `TestDeregisterTraefikRouterWithRedis` - full Redis integration test
+
 ## [v0.3.2] - 2025-01-30
 
 ### Added
@@ -492,7 +526,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Troubleshooting guide
 - API documentation in code comments
 
-[Unreleased]: https://github.com/sqcows/pages-server/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/sqcows/pages-server/compare/v0.3.3...HEAD
+[v0.3.3]: https://github.com/sqcows/pages-server/compare/v0.3.2...v0.3.3
+[v0.3.2]: https://github.com/sqcows/pages-server/compare/v0.1.5...v0.3.2
 [v0.1.5]: https://github.com/sqcows/pages-server/compare/v0.1.4...v0.1.5
 [v0.1.4]: https://github.com/sqcows/pages-server/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/sqcows/pages-server/compare/v0.1.2...v0.1.3

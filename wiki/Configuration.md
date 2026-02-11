@@ -120,7 +120,7 @@ The `.pages` file is a YAML file in each repository's root that configures how t
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enabled` | boolean | No | Enable/disable pages (default: true) |
+| `enabled` | boolean | No | Enable/disable pages (default: true). When `false`, the site returns 404 and all cached data is cleaned up (see [Disabling a Site](#disabling-a-site)). |
 | `custom_domain` | string | No | Custom domain for this site |
 | `enable_branches` | array | No | Branch subdomains (requires `custom_domain`) |
 | `password` | string | No | SHA256 hash for main branch password protection |
@@ -154,6 +154,27 @@ enabled: true
 custom_domain: www.example.com
 enable_branches: ["stage", "qa", "dev"]
 ```
+
+### Disabling a Site
+
+Set `enabled: false` to stop serving a site and clean up all cached data:
+
+```yaml
+enabled: false
+```
+
+When a request arrives for a disabled site (via pages domain or custom domain), the plugin:
+1. Returns a **404 "Site is not available"** response
+2. Removes the custom domain forward mapping (`custom_domain:{domain}`)
+3. Removes the custom domain reverse mapping (`username:repository`)
+4. Removes the Traefik router configuration
+5. Removes any redirect middleware rules
+6. Removes branch subdomain mappings and their Traefik routers
+7. Removes cached password entries
+
+Content cache entries expire naturally based on `cacheTTL`.
+
+To re-enable, set `enabled: true` (or remove the field) and visit the pages URL to re-register.
 
 ## .redirects File Configuration
 

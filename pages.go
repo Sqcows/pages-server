@@ -737,6 +737,10 @@ func (ps *PagesServer) deregisterSite(ctx context.Context, username, repository 
 		}
 	}
 
+	// Clear content cache for this site
+	contentCachePrefix := username + ":" + repository + ":"
+	ps.cache.DeleteByPrefix(contentCachePrefix)
+
 	// Delete password cache
 	ps.passwordCache.Delete(fmt.Sprintf("password:%s:%s", username, repository))
 
