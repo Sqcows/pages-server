@@ -10,17 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Enforce `enabled: false` in `.pages` File**: Sites can now be fully disabled by setting `enabled: false`
   - When `enabled: false` is set, the site returns 404 "Site is not available" for all requests
+  - Enabled check runs before password check and content cache for immediate blocking
+  - Enabled status cached with 60-second TTL to avoid API calls on every request
   - All cached data is automatically cleaned up when a site is disabled:
     - Custom domain forward and reverse mappings
     - Traefik router configurations for main domain and branch subdomains
     - Redirect middleware rules and metadata
-    - Password cache entries
+    - Content cache entries (via `DeleteByPrefix`)
+    - Password, enabled status, and settings cache entries
   - Cleanup occurs on three paths: pages domain requests, custom domain requests, and `registerCustomDomain`
-  - Content cache entries (TTL=300s) are left to expire naturally
-  - Replaced `HasPagesFile` with `GetPagesConfig` in pages domain path to avoid double API calls
   - New functions: `deregisterSite()`, `deregisterTraefikRouter()`, `cleanupRedirectMiddleware()`
+- **`DeleteByPrefix` Cache Method**: Pattern-based cache deletion for bulk key removal
+  - Added `DeleteByPrefix(prefix string)` to the `Cache` interface
+  - `MemoryCache`: iterates map and deletes keys with matching prefix
+  - `RedisCache`: uses cursor-based `SCAN` with `MATCH` pattern (non-blocking), then `DEL`
+  - Used by `deregisterSite()` to immediately purge all cached content for disabled sites
 
 ### Fixed
+- **Disabled Site Content Cache Bypass**: Enabled check now runs before content cache lookup
+  - Previously, cached content was served without checking if the site was disabled
+  - Enabled status is checked first (from 60s cache or API), blocking disabled sites immediately
+  - Eliminates the window where stale content could be served after setting `enabled: false`
+- **Disabled Site Password Cache Leak**: Enabled check now runs before password check
+  - Previously, the password check re-created `password:` cache entries before `deregisterSite` could delete them
+  - Moving the enabled check first prevents password cache from being re-populated for disabled sites
 - **Reaper Script Key Casing**: Fixed incorrect Redis key casing in reaper script
   - `entrypoints` → `entryPoints` (camelCase to match Go implementation)
   - `certresolver` → `certResolver` (camelCase to match Go implementation)
@@ -33,11 +46,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 - Added `TestDeregisterTraefikRouter` - verifies all 7 Traefik router keys are deleted
 - Added `TestDeregisterTraefikRouterDisabled` - verifies no-op when feature is disabled
-- Added `TestDeregisterSite` - verifies domain mappings and password cache are cleaned up
+- Added `TestDeregisterSite` - verifies all cache keys are cleaned up including content cache
 - Added `TestDeregisterSiteWithBranches` - verifies branch subdomain keys are also removed
 - Added `TestDeregisterSiteNoDomain` - verifies no panic when no domain mapping exists
 - Added `TestServeHTTPDisabledSiteCustomDomain` - verifies 404 for disabled custom domain sites
 - Added `TestDeregisterTraefikRouterWithRedis` - full Redis integration test
+- Added `TestMemoryCacheDeleteByPrefix` - verifies prefix-based deletion
+- Added `TestMemoryCacheDeleteByPrefixNoMatch` - verifies no-op for non-matching prefix
+- Added `TestRedisCacheDeleteByPrefix` - verifies Redis SCAN-based prefix deletion
+- Added `TestRedisCacheDeleteByPrefixFallback` - verifies fallback when Redis unavailable
+- Added `TestRedisCacheDeleteByPrefixLargeSet` - verifies SCAN cursor iteration with 150+ keys
+
+### Documentation
+- Added "Disabling a Site" section to README.md with usage instructions and cleanup details
+- Updated `.pages` field descriptions in README.md and wiki/Configuration.md
+- Added "Disabling a Site with Custom Domain" section to wiki/Custom-Domains.md
+- Added "Site is not available" troubleshooting to wiki/Troubleshooting.md
+- Updated reaper/README.md with `enabled: false` checking and corrected key casing in examples
+- Updated version references from v0.3.2 to v0.3.3 across all documentation
+- Added v0.3.3 entry to CHANGELOG.md
 
 ## [v0.3.2] - 2025-01-30
 
