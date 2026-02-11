@@ -290,12 +290,24 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		// Parse file path from URL (custom domains serve from repository root)
 		filePath = ps.parseCustomDomainPath(req.URL.Path)
 
-		// Check if site is disabled
-		pagesConfig, configErr := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
-		if configErr == nil && !pagesConfig.Enabled {
-			ps.deregisterSite(req.Context(), username, repository, pagesConfig)
-			ps.serveError(rw, http.StatusNotFound, "Site is not available")
-			return
+		// Check if site is disabled (uses cached enabled status with 60s TTL)
+		customEnabledCacheKey := fmt.Sprintf("enabled:%s:%s", username, repository)
+		if cachedEnabled, found := ps.passwordCache.Get(customEnabledCacheKey); found {
+			if string(cachedEnabled) == "false" {
+				ps.serveError(rw, http.StatusNotFound, "Site is not available")
+				return
+			}
+		} else {
+			// Cache miss - check via API and cache result
+			pagesConfig, configErr := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
+			if configErr == nil && !pagesConfig.Enabled {
+				ps.passwordCache.Set(customEnabledCacheKey, []byte("false"))
+				ps.deregisterSite(req.Context(), username, repository, pagesConfig)
+				ps.serveError(rw, http.StatusNotFound, "Site is not available")
+				return
+			} else if configErr == nil {
+				ps.passwordCache.Set(customEnabledCacheKey, []byte("true"))
+			}
 		}
 	} else {
 		// Custom domains disabled and not a pagesDomain request
@@ -387,6 +399,19 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Check if site is disabled (cached check, 60-second TTL via passwordCache)
+	enabledCacheKey := fmt.Sprintf("enabled:%s:%s", username, repository)
+	if cachedEnabled, found := ps.passwordCache.Get(enabledCacheKey); found {
+		if string(cachedEnabled) == "false" {
+			pagesConfig, _ := ps.forgejoClient.GetPagesConfig(req.Context(), username, repository)
+			if pagesConfig != nil {
+				ps.deregisterSite(req.Context(), username, repository, pagesConfig)
+			}
+			ps.serveError(rw, http.StatusNotFound, "Site is not available")
+			return
+		}
+	}
+
 	// Check cache first (include branch in cache key for branch-specific content)
 	cacheKey := fmt.Sprintf("%s:%s:%s:%s", username, repository, branch, filePath)
 	if cached, found := ps.cache.Get(cacheKey); found {
@@ -401,10 +426,13 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if !pagesConfig.Enabled {
+		ps.passwordCache.Set(enabledCacheKey, []byte("false"))
 		ps.deregisterSite(req.Context(), username, repository, pagesConfig)
 		ps.serveError(rw, http.StatusNotFound, "Site is not available")
 		return
 	}
+	// Cache that the site is enabled
+	ps.passwordCache.Set(enabledCacheKey, []byte("true"))
 
 	// Get the file content from Forgejo (use branch-aware method)
 	content, contentType, err := ps.forgejoClient.GetFileContentFromBranch(req.Context(), username, repository, filePath, branch)
@@ -558,11 +586,14 @@ func (ps *PagesServer) registerCustomDomain(ctx context.Context, username, repos
 		return
 	}
 
-	// If site is disabled, deregister instead of registering
+	// Update enabled status cache
+	enabledCacheKey := fmt.Sprintf("enabled:%s:%s", username, repository)
 	if !pagesConfig.Enabled {
+		ps.passwordCache.Set(enabledCacheKey, []byte("false"))
 		ps.deregisterSite(ctx, username, repository, pagesConfig)
 		return
 	}
+	ps.passwordCache.Set(enabledCacheKey, []byte("true"))
 
 	// If custom domain is configured, register it
 	if pagesConfig.CustomDomain != "" {
