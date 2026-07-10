@@ -20,10 +20,12 @@ package pages_server
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"strings"
@@ -150,6 +152,21 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	}
 	if config.ForgejoHost == "" {
 		return nil, fmt.Errorf("forgejoHost is required")
+	}
+
+	// Ensure a secret key is always present for signing authentication cookies.
+	// Without a key, cookie signatures cannot be verified and password protection
+	// would be trivially bypassable. If the operator did not configure one, generate
+	// a strong random key at startup so the plugin is secure by default.
+	if config.AuthSecretKey == "" {
+		key, err := generateRandomSecretKey()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate authentication secret key: %w", err)
+		}
+		config.AuthSecretKey = key
+		fmt.Println("Warning: authSecretKey not configured; generated a random key at startup. " +
+			"Existing auth cookies are invalidated on restart, and separate instances will not share " +
+			"sessions. Set authSecretKey explicitly for stable sessions and multi-instance deployments.")
 	}
 
 	// Initialize Forgejo client
@@ -1316,7 +1333,8 @@ func (ps *PagesServer) serveError(rw http.ResponseWriter, statusCode int, messag
 	if hasCustomError {
 		rw.Write(errorPage)
 	} else {
-		// Default error page
+		// Default error page. Escape the message: it may embed error strings or
+		// other values derived from user-controlled input.
 		fmt.Fprintf(rw, `<!DOCTYPE html>
 <html>
 <head><title>Error %d</title></head>
@@ -1324,7 +1342,7 @@ func (ps *PagesServer) serveError(rw http.ResponseWriter, statusCode int, messag
 <h1>Error %d</h1>
 <p>%s</p>
 </body>
-</html>`, statusCode, statusCode, message)
+</html>`, statusCode, statusCode, html.EscapeString(message))
 	}
 }
 
@@ -1460,8 +1478,10 @@ func (ps *PagesServer) isAuthenticated(req *http.Request, username, repository s
 // verifyAuthCookie verifies the authentication cookie signature.
 func (ps *PagesServer) verifyAuthCookie(cookieValue, username, repository string) bool {
 	if ps.config.AuthSecretKey == "" {
-		// If no secret key configured, fall back to simple validation
-		return cookieValue != ""
+		// No secret key means signatures cannot be verified, so fail closed.
+		// New() always generates a key, so this only guards against
+		// misconfiguration or direct struct construction (e.g. in tests).
+		return false
 	}
 
 	// Cookie format: <timestamp>|<signature>
@@ -1509,14 +1529,10 @@ func (ps *PagesServer) isTimestampValid(timestamp string) bool {
 func (ps *PagesServer) createAuthCookie(username, repository string) *http.Cookie {
 	timestamp := fmt.Sprintf("%d", time.Now().Unix())
 
-	var cookieValue string
-	if ps.config.AuthSecretKey != "" {
-		signature := ps.generateSignature(timestamp, username, repository)
-		cookieValue = fmt.Sprintf("%s|%s", timestamp, signature)
-	} else {
-		// Fallback without signature if no secret key
-		cookieValue = timestamp
-	}
+	// Always sign the cookie. New() guarantees AuthSecretKey is set, and
+	// verifyAuthCookie fails closed without it, so unsigned cookies are never valid.
+	signature := ps.generateSignature(timestamp, username, repository)
+	cookieValue := fmt.Sprintf("%s|%s", timestamp, signature)
 
 	cookieName := fmt.Sprintf("pages_auth_%s_%s", username, repository)
 
@@ -1537,6 +1553,18 @@ func hashPassword(password string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// generateRandomSecretKey generates a cryptographically secure random secret key
+// for HMAC signing of authentication cookies. It returns a 64-character hex string
+// (32 random bytes). Used when the operator does not configure an explicit
+// AuthSecretKey, so cookie signatures can still be enforced.
+func generateRandomSecretKey() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 // isBranchAuthenticated checks if the request has a valid branch authentication cookie.
 // Cookie is unique per repository to ensure branch passwords are repository-specific.
 func (ps *PagesServer) isBranchAuthenticated(req *http.Request, username, repository string) bool {
@@ -1554,8 +1582,10 @@ func (ps *PagesServer) isBranchAuthenticated(req *http.Request, username, reposi
 // Signature includes username and repository to ensure cookies are repository-specific.
 func (ps *PagesServer) verifyBranchAuthCookie(cookieValue, username, repository string) bool {
 	if ps.config.AuthSecretKey == "" {
-		// If no secret key configured, fall back to simple validation
-		return cookieValue != ""
+		// No secret key means signatures cannot be verified, so fail closed.
+		// New() always generates a key, so this only guards against
+		// misconfiguration or direct struct construction (e.g. in tests).
+		return false
 	}
 
 	// Cookie format: <timestamp>|<signature>
@@ -1591,14 +1621,10 @@ func (ps *PagesServer) generateBranchSignature(timestamp, username, repository s
 func (ps *PagesServer) createBranchAuthCookie(username, repository string) *http.Cookie {
 	timestamp := fmt.Sprintf("%d", time.Now().Unix())
 
-	var cookieValue string
-	if ps.config.AuthSecretKey != "" {
-		signature := ps.generateBranchSignature(timestamp, username, repository)
-		cookieValue = fmt.Sprintf("%s|%s", timestamp, signature)
-	} else {
-		// Fallback without signature if no secret key
-		cookieValue = timestamp
-	}
+	// Always sign the cookie. New() guarantees AuthSecretKey is set, and
+	// verifyBranchAuthCookie fails closed without it, so unsigned cookies are never valid.
+	signature := ps.generateBranchSignature(timestamp, username, repository)
+	cookieValue := fmt.Sprintf("%s|%s", timestamp, signature)
 
 	cookieName := fmt.Sprintf("pages_branch_auth_%s_%s", username, repository)
 
@@ -1621,10 +1647,10 @@ func (ps *PagesServer) serveBranchLoginPage(rw http.ResponseWriter, req *http.Re
 
 	errorHTML := ""
 	if errorMsg != "" {
-		errorHTML = fmt.Sprintf(`<p class="error">%s</p>`, errorMsg)
+		errorHTML = fmt.Sprintf(`<p class="error">%s</p>`, html.EscapeString(errorMsg))
 	}
 
-	html := fmt.Sprintf(`<!DOCTYPE html>
+	page := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1734,7 +1760,7 @@ func (ps *PagesServer) serveBranchLoginPage(rw http.ResponseWriter, req *http.Re
 </body>
 </html>`, errorHTML)
 
-	rw.Write([]byte(html))
+	rw.Write([]byte(page))
 }
 
 // serveLoginPage serves the password login page.
@@ -1745,10 +1771,10 @@ func (ps *PagesServer) serveLoginPage(rw http.ResponseWriter, req *http.Request,
 
 	errorHTML := ""
 	if errorMsg != "" {
-		errorHTML = fmt.Sprintf(`<p class="error">%s</p>`, errorMsg)
+		errorHTML = fmt.Sprintf(`<p class="error">%s</p>`, html.EscapeString(errorMsg))
 	}
 
-	html := fmt.Sprintf(`<!DOCTYPE html>
+	page := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1856,8 +1882,8 @@ func (ps *PagesServer) serveLoginPage(rw http.ResponseWriter, req *http.Request,
         </form>
     </div>
 </body>
-</html>`, username, repository, errorHTML)
+</html>`, html.EscapeString(username), html.EscapeString(repository), errorHTML)
 
-	rw.Write([]byte(html))
+	rw.Write([]byte(page))
 }
 

@@ -17,6 +17,7 @@ package pages_server
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 )
@@ -347,7 +348,7 @@ blog/old-post:blog/new-post
         <p>For more information, please see the <a href="https://code.squarecows.com/SquareCows/pages-server/wiki" target="_blank">Bovine Pages Server documentation</a>.</p>
     </div>
 </body>
-</html>`, username, repository, err.Error())
+</html>`, html.EscapeString(username), html.EscapeString(repository), html.EscapeString(err.Error()))
 
 		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 		rw.Header().Set("Server", "bovine")
@@ -460,7 +461,7 @@ blog/old-post:blog/new-post
         </div>
     </div>
 </body>
-</html>`, pagesConfig.CustomDomain, username, repository, len(rules), formatRedirectList(rules))
+</html>`, html.EscapeString(pagesConfig.CustomDomain), html.EscapeString(username), html.EscapeString(repository), len(rules), formatRedirectList(rules))
 
 	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 	rw.Header().Set("Server", "bovine")
@@ -469,10 +470,13 @@ blog/old-post:blog/new-post
 }
 
 // formatRedirectList formats redirect rules as HTML list items.
+// Rule values originate from the repository's .redirects file, so they are
+// HTML-escaped to prevent stored XSS in the rendered response.
 func formatRedirectList(rules []RedirectRule) string {
 	var sb strings.Builder
 	for _, rule := range rules {
-		sb.WriteString(fmt.Sprintf("            <li><code>/%s</code> → <code>%s</code></li>\n", rule.From, rule.To))
+		sb.WriteString(fmt.Sprintf("            <li><code>/%s</code> → <code>%s</code></li>\n",
+			html.EscapeString(rule.From), html.EscapeString(rule.To)))
 	}
 	return sb.String()
 }

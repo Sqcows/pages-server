@@ -98,7 +98,7 @@ experimental:
   plugins:
     pages-server:
       moduleName: github.com/sqcows/pages-server
-      version: v0.3.3
+      version: v0.3.4
 ```
 
 ### 2. Configure Let's Encrypt (ACME)
@@ -220,7 +220,7 @@ http:
 | `traefikRedisRouterTTL` | int | 600 | TTL for Traefik router configurations in seconds |
 | `traefikRedisRootKey` | string | "traefik" | Redis root key for Traefik configuration |
 | `authCookieDuration` | int | 3600 | Authentication cookie validity in seconds (for password protection) |
-| `authSecretKey` | string | "" | Secret key for HMAC cookie signing (recommended for password protection security) |
+| `authSecretKey` | string | auto-generated | Secret key for HMAC cookie signing. If left empty, a strong random key is generated at startup so signing is always enforced. Set explicitly for stable sessions across restarts and for multi-instance/HA deployments. |
 | `enableCustomDomainDNSVerification` | bool | false | Enable DNS TXT record verification for custom domains (prevents domain hijacking) |
 | `maxRedirects` | int | 25 | Maximum number of redirect rules to read from `.redirects` file (resource exhaustion protection) |
 
@@ -802,7 +802,7 @@ http:
           pagesDomain: pages.example.com
           forgejoHost: https://git.example.com
           authCookieDuration: 3600  # Cookie validity in seconds (default: 3600 = 1 hour)
-          authSecretKey: "your-random-secret-key-here"  # For HMAC cookie signing (recommended)
+          authSecretKey: "your-random-secret-key-here"  # HMAC cookie signing key; auto-generated at startup if omitted. Set explicitly for stable/multi-instance sessions.
 ```
 
 **Step 4: Commit and push**
@@ -816,7 +816,7 @@ git push
 ### Security Features
 
 - **SHA256 Password Hashing**: Passwords are never stored in plaintext
-- **HMAC-Signed Cookies**: Prevents cookie tampering (when `authSecretKey` is configured)
+- **HMAC-Signed Cookies**: Prevents cookie tampering; signing is always enforced (a random `authSecretKey` is generated at startup if none is configured, and verification fails closed without a key)
 - **Secure Cookies**:
   - `HttpOnly` - Prevents JavaScript access (XSS protection)
   - `Secure` - Only sent over HTTPS
@@ -829,7 +829,7 @@ git push
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `authCookieDuration` | int | 3600 | Authentication cookie validity in seconds |
-| `authSecretKey` | string | "" | Secret key for HMAC cookie signing (recommended for security) |
+| `authSecretKey` | string | auto-generated | Secret key for HMAC cookie signing; a strong random key is generated at startup if not set. Set explicitly for stable sessions across restarts and multi-instance/HA deployments. |
 
 ### Login Page
 
@@ -998,7 +998,7 @@ Result:
 - **Strong passwords**: Use long, random passwords for branch access
 - **Cookie scope**: Branch auth cookie is unique per repository (not shared across repositories)
 - **HTTPS required**: Like repository passwords, branch passwords require HTTPS
-- **Configure authSecretKey**: Recommended for HMAC cookie signing in Traefik middleware configuration
+- **Configure authSecretKey**: Auto-generated at startup if unset; set it explicitly to keep sessions valid across restarts and to share sessions across multiple instances
 
 ### Removing Branch Password Protection
 

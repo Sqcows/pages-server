@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.4] - 2026-07-10
+
+### Security
+- **Authentication Bypass Fixed (High, CWE-287)**: Password-protected sites could be
+  accessed with any non-empty cookie when `authSecretKey` was not configured (the default).
+  - `verifyAuthCookie()` and `verifyBranchAuthCookie()` no longer fall back to accepting any
+    non-empty cookie value. With no secret key they now **fail closed** (reject).
+  - `New()` auto-generates a strong random `authSecretKey` (32 bytes) at startup when the
+    operator has not configured one, so cookie signatures are always enforced (secure by default).
+  - A startup warning recommends setting `authSecretKey` explicitly for stable sessions across
+    restarts and for multi-instance/HA deployments (auto-generated keys are per-instance).
+  - `createAuthCookie()` / `createBranchAuthCookie()` always sign cookies (removed unsigned fallback).
+- **Stored XSS Fixed (Medium, CWE-79)**: The `/LOAD_REDIRECTS` success page rendered `.redirects`
+  rule values (`from`/`to`) without escaping, allowing a repository owner to inject scripts.
+  `formatRedirectList()` now HTML-escapes all rule values.
+- **HTML Injection Fixed (Medium, CWE-79)**: Login pages, the default error page, and the
+  `/LOAD_REDIRECTS` pages interpolated `username`, `repository`, `custom_domain`, and error
+  strings into HTML without escaping. All such values are now escaped via `html.EscapeString()`
+  in `serveLoginPage()`, `serveBranchLoginPage()`, `serveError()`, and `handleLoadRedirects()`.
+
+### Tests
+- Added `security_test.go` with regression tests for all three issues:
+  - `TestBugA_*` - auth bypass fails closed, key auto-generation, forged/tampered/cross-repo/
+    wrong-key cookie rejection, and random key format/uniqueness.
+  - `TestBugB_RedirectListEscapesXSS` - `.redirects` payloads are escaped.
+  - `TestBugC_*` - login pages and error page escape injected HTML.
+- Updated `TestCreateBranchAuthCookieWithoutSecretKey` to assert fail-closed verification.
+
 ## [v0.3.3] - 2025-02-10
 
 ### Added

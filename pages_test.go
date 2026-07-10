@@ -641,7 +641,10 @@ func TestCreateBranchAuthCookie(t *testing.T) {
 	}
 }
 
-// TestCreateBranchAuthCookieWithoutSecretKey tests cookie creation without a secret key.
+// TestCreateBranchAuthCookieWithoutSecretKey verifies fail-closed behaviour when no
+// secret key is configured. New() always generates a key in production, so this
+// covers the degenerate/misconfiguration path: even a freshly created cookie must
+// not authenticate, so password protection cannot be bypassed.
 func TestCreateBranchAuthCookieWithoutSecretKey(t *testing.T) {
 	ps := &PagesServer{
 		config: &Config{
@@ -663,9 +666,13 @@ func TestCreateBranchAuthCookieWithoutSecretKey(t *testing.T) {
 		t.Errorf("Expected cookie name %q, got %q", expectedCookieName, cookie.Name)
 	}
 
-	// Without secret key, value should just be timestamp
-	if cookie.Value == "" {
-		t.Error("Expected non-empty cookie value")
+	// Fail closed: with no secret key, no cookie value may authenticate,
+	// including the one just produced or an arbitrary attacker-supplied value.
+	if ps.verifyBranchAuthCookie(cookie.Value, username, repository) {
+		t.Error("SECURITY: branch cookie verified with no secret key configured (fail-open)")
+	}
+	if ps.verifyBranchAuthCookie("x", username, repository) {
+		t.Error("SECURITY: arbitrary branch cookie value accepted with no secret key (auth bypass)")
 	}
 }
 
