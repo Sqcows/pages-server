@@ -297,6 +297,15 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 		// Standard pages domain requests always use the default branch
 		branch = ""
+
+		// Dot-to-dash convention (GP-009): Forgejo usernames with dots use dashes in URLs.
+		// If the username contains dashes, try the dotted version (Forgejo API lookup).
+		// This handles usernames like "tobias-hochguertel" → "tobias.hochguertel".
+		if strings.Contains(username, "-") {
+			if dottedUser, ok := ps.resolveDottedUsername(req.Context(), username, repository); ok {
+				username = dottedUser
+			}
+		}
 	} else if ps.config.EnableCustomDomains {
 		// This might be a custom domain request (possibly a branch subdomain)
 		username, repository, branch, err = ps.resolveCustomDomain(req.Context(), host)
@@ -508,6 +517,19 @@ func (ps *PagesServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("X-Cache-Status", "MISS")
 	rw.WriteHeader(http.StatusOK)
 	rw.Write(content)
+}
+
+// resolveDottedUsername tries converting dashes to dots in the username.
+// Returns the dotted username and true if the repo exists with the dotted name,
+// otherwise returns empty string and false (keep the dashed version).
+func (ps *PagesServer) resolveDottedUsername(ctx context.Context, username, repository string) (string, bool) {
+	dottedUsername := strings.ReplaceAll(username, "-", ".")
+	// Check if the repo exists with the dotted username
+	_, err := ps.forgejoClient.GetRepository(ctx, dottedUsername, repository)
+	if err == nil {
+		return dottedUsername, true
+	}
+	return "", false
 }
 
 // parseRequest parses the incoming HTTP request to extract username, repository, and file path.
